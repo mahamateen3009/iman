@@ -1,17 +1,20 @@
 import { useState } from 'react';
-import { Mail, Lock, Chrome, Sparkles } from 'lucide-react';
+import { Mail, Lock, Chrome, Sparkles, ArrowLeft } from 'lucide-react';
 
 interface AuthScreenProps {
   onSignIn: (email: string, password: string) => Promise<{ error: string | null }>;
   onSignUp: (email: string, password: string) => Promise<{ error: string | null }>;
   onGoogleSignIn: () => Promise<{ error: string | null }>;
+  onResetPassword: (email: string) => Promise<{ error: string | null }>;
 }
 
-export function AuthScreen({ onSignIn, onSignUp, onGoogleSignIn }: AuthScreenProps) {
+export function AuthScreen({ onSignIn, onSignUp, onGoogleSignIn, onResetPassword }: AuthScreenProps) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [view, setView] = useState<'auth' | 'reset'>('auth');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -19,6 +22,7 @@ export function AuthScreen({ onSignIn, onSignUp, onGoogleSignIn }: AuthScreenPro
     if (!email || !password) return;
     setBusy(true);
     setError(null);
+    setInfo(null);
     const fn = mode === 'login' ? onSignIn : onSignUp;
     const result = await fn(email, password);
     setBusy(false);
@@ -33,6 +37,21 @@ export function AuthScreen({ onSignIn, onSignUp, onGoogleSignIn }: AuthScreenPro
     if (result.error) setError(result.error);
   };
 
+  const handleReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    const result = await onResetPassword(email);
+    setBusy(false);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setInfo('Password reset link sent. Check your email inbox to continue.');
+    }
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-emerald-50 via-cream-50 to-emerald-100 px-4 dark:from-ink-900 dark:via-ink-800 dark:to-ink-900">
       <div className="w-full max-w-md">
@@ -45,99 +64,167 @@ export function AuthScreen({ onSignIn, onSignUp, onGoogleSignIn }: AuthScreenPro
           </p>
         </div>
 
-        <div className="rounded-2xl border border-emerald-900/10 bg-white/80 p-6 shadow-soft backdrop-blur dark:border-gold-400/10 dark:bg-ink-800/60">
-          <div className="mb-5 flex gap-2 rounded-xl bg-emerald-50 p-1 dark:bg-ink-700">
+        {view === 'reset' ? (
+          <div className="rounded-2xl border border-emerald-900/10 bg-white/80 p-6 shadow-soft backdrop-blur dark:border-gold-400/10 dark:bg-ink-800/60">
             <button
               type="button"
-              onClick={() => { setMode('login'); setError(null); }}
-              className={`flex-1 rounded-lg py-2 text-sm font-medium transition ${
-                mode === 'login'
-                  ? 'bg-white text-emerald-900 shadow-sm dark:bg-ink-600 dark:text-cream-50'
-                  : 'text-emerald-700/60 dark:text-ink-400'
-              }`}
+              onClick={() => { setView('auth'); setError(null); setInfo(null); }}
+              className="mb-4 flex items-center gap-1 text-xs font-medium text-emerald-700/70 transition hover:text-emerald-900 dark:text-ink-400 dark:hover:text-cream-50"
             >
-              Sign In
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to sign in
             </button>
-            <button
-              type="button"
-              onClick={() => { setMode('signup'); setError(null); }}
-              className={`flex-1 rounded-lg py-2 text-sm font-medium transition ${
-                mode === 'signup'
-                  ? 'bg-white text-emerald-900 shadow-sm dark:bg-ink-600 dark:text-cream-50'
-                  : 'text-emerald-700/60 dark:text-ink-400'
-              }`}
-            >
-              Create Account
-            </button>
+            <h2 className="mb-1 text-lg font-semibold text-emerald-900 dark:text-cream-50">
+              Reset your password
+            </h2>
+            <p className="mb-4 text-xs text-emerald-700/60 dark:text-ink-400">
+              Enter your email and we'll send you a link to set a new password.
+            </p>
+            <form onSubmit={handleReset} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-emerald-700/70 dark:text-ink-400">
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-700/40 dark:text-ink-400" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    required
+                    className="w-full rounded-xl border border-emerald-900/10 bg-cream-50 py-2.5 pl-10 pr-3 text-sm text-emerald-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 dark:border-gold-400/10 dark:bg-ink-700 dark:text-cream-50"
+                  />
+                </div>
+              </div>
+
+              {error && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">
+                  {error}
+                </p>
+              )}
+              {info && (
+                <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+                  {info}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={busy}
+                className="w-full rounded-xl bg-gradient-to-br from-emerald-700 to-emerald-800 py-2.5 text-sm font-medium text-cream-50 shadow-soft transition hover:from-emerald-800 hover:to-emerald-900 disabled:opacity-50 dark:from-gold-500 dark:to-gold-600 dark:text-ink-900"
+              >
+                {busy ? 'Sending…' : 'Send reset link'}
+              </button>
+            </form>
           </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-emerald-700/70 dark:text-ink-400">
-                Email
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-700/40 dark:text-ink-400" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  required
-                  className="w-full rounded-xl border border-emerald-900/10 bg-cream-50 py-2.5 pl-10 pr-3 text-sm text-emerald-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 dark:border-gold-400/10 dark:bg-ink-700 dark:text-cream-50"
-                />
-              </div>
+        ) : (
+          <div className="rounded-2xl border border-emerald-900/10 bg-white/80 p-6 shadow-soft backdrop-blur dark:border-gold-400/10 dark:bg-ink-800/60">
+            <div className="mb-5 flex gap-2 rounded-xl bg-emerald-50 p-1 dark:bg-ink-700">
+              <button
+                type="button"
+                onClick={() => { setMode('login'); setError(null); setInfo(null); }}
+                className={`flex-1 rounded-lg py-2 text-sm font-medium transition ${
+                  mode === 'login'
+                    ? 'bg-white text-emerald-900 shadow-sm dark:bg-ink-600 dark:text-cream-50'
+                    : 'text-emerald-700/60 dark:text-ink-400'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('signup'); setError(null); setInfo(null); }}
+                className={`flex-1 rounded-lg py-2 text-sm font-medium transition ${
+                  mode === 'signup'
+                    ? 'bg-white text-emerald-900 shadow-sm dark:bg-ink-600 dark:text-cream-50'
+                    : 'text-emerald-700/60 dark:text-ink-400'
+                }`}
+              >
+                Create Account
+              </button>
             </div>
 
-            <div>
-              <label className="mb-1 block text-xs font-medium text-emerald-700/70 dark:text-ink-400">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-700/40 dark:text-ink-400" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  minLength={6}
-                  className="w-full rounded-xl border border-emerald-900/10 bg-cream-50 py-2.5 pl-10 pr-3 text-sm text-emerald-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 dark:border-gold-400/10 dark:bg-ink-700 dark:text-cream-50"
-                />
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-emerald-700/70 dark:text-ink-400">
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-700/40 dark:text-ink-400" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    required
+                    className="w-full rounded-xl border border-emerald-900/10 bg-cream-50 py-2.5 pl-10 pr-3 text-sm text-emerald-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 dark:border-gold-400/10 dark:bg-ink-700 dark:text-cream-50"
+                  />
+                </div>
               </div>
-            </div>
 
-            {error && (
-              <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">
-                {error}
-              </p>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-emerald-700/70 dark:text-ink-400">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-700/40 dark:text-ink-400" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    minLength={6}
+                    className="w-full rounded-xl border border-emerald-900/10 bg-cream-50 py-2.5 pl-10 pr-3 text-sm text-emerald-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 dark:border-gold-400/10 dark:bg-ink-700 dark:text-cream-50"
+                  />
+                </div>
+              </div>
+
+              {error && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={busy}
+                className="w-full rounded-xl bg-gradient-to-br from-emerald-700 to-emerald-800 py-2.5 text-sm font-medium text-cream-50 shadow-soft transition hover:from-emerald-800 hover:to-emerald-900 disabled:opacity-50 dark:from-gold-500 dark:to-gold-600 dark:text-ink-900"
+              >
+                {busy ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create Account'}
+              </button>
+            </form>
+
+            {mode === 'login' && (
+              <div className="mt-3 text-center">
+                <button
+                  type="button"
+                  onClick={() => { setView('reset'); setError(null); setInfo(null); }}
+                  className="text-xs font-medium text-emerald-700/70 transition hover:text-emerald-900 dark:text-ink-400 dark:hover:text-cream-50"
+                >
+                  Forgot password?
+                </button>
+              </div>
             )}
 
+            <div className="my-4 flex items-center gap-3">
+              <div className="h-px flex-1 bg-emerald-900/10 dark:bg-gold-400/10" />
+              <span className="text-xs text-emerald-700/50 dark:text-ink-400">or</span>
+              <div className="h-px flex-1 bg-emerald-900/10 dark:bg-gold-400/10" />
+            </div>
+
             <button
-              type="submit"
+              type="button"
+              onClick={handleGoogle}
               disabled={busy}
-              className="w-full rounded-xl bg-gradient-to-br from-emerald-700 to-emerald-800 py-2.5 text-sm font-medium text-cream-50 shadow-soft transition hover:from-emerald-800 hover:to-emerald-900 disabled:opacity-50 dark:from-gold-500 dark:to-gold-600 dark:text-ink-900"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-900/10 bg-white py-2.5 text-sm font-medium text-emerald-900 transition hover:bg-emerald-50 disabled:opacity-50 dark:border-gold-400/10 dark:bg-ink-700 dark:text-cream-50 dark:hover:bg-ink-600"
             >
-              {busy ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create Account'}
+              <Chrome className="h-4 w-4" />
+              Continue with Google
             </button>
-          </form>
-
-          <div className="my-4 flex items-center gap-3">
-            <div className="h-px flex-1 bg-emerald-900/10 dark:bg-gold-400/10" />
-            <span className="text-xs text-emerald-700/50 dark:text-ink-400">or</span>
-            <div className="h-px flex-1 bg-emerald-900/10 dark:bg-gold-400/10" />
           </div>
-
-          <button
-            type="button"
-            onClick={handleGoogle}
-            disabled={busy}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-900/10 bg-white py-2.5 text-sm font-medium text-emerald-900 transition hover:bg-emerald-50 disabled:opacity-50 dark:border-gold-400/10 dark:bg-ink-700 dark:text-cream-50 dark:hover:bg-ink-600"
-          >
-            <Chrome className="h-4 w-4" />
-            Continue with Google
-          </button>
-        </div>
+        )}
 
         <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-emerald-700/50 dark:text-ink-400">
           <Sparkles className="h-3 w-3" />
