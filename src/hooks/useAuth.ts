@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
+import { ageGroupFromAge } from '../types/profile';
 import type { UserProfile } from '../types/profile';
 
 export interface AuthState {
@@ -10,7 +11,7 @@ export interface AuthState {
   profileLoading: boolean;
 }
 
-const PROFILE_COLUMNS = 'id, name, age, date_of_birth, gender, voice_pitch, voice_rate, created_at';
+const PROFILE_COLUMNS = 'id, name, age, age_group, date_of_birth, gender, voice_pitch, voice_rate, created_at';
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
@@ -38,9 +39,12 @@ export function useAuth() {
   const saveProfile = useCallback(
     async (updates: Partial<UserProfile>) => {
       if (!session?.user) return;
+      const profileUpdates = updates.age !== undefined
+        ? { ...updates, age_group: ageGroupFromAge(updates.age) }
+        : updates;
       const { data, error } = await supabase
         .from('profiles')
-        .upsert({ id: session.user.id, ...updates, updated_at: new Date().toISOString() })
+        .upsert({ id: session.user.id, ...profileUpdates, updated_at: new Date().toISOString() })
         .select(PROFILE_COLUMNS)
         .maybeSingle();
 

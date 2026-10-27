@@ -2,6 +2,7 @@ export interface UserProfile {
   id: string;
   name: string;
   age: number | null;
+  age_group: 'child' | 'teen' | 'adult' | null;
   date_of_birth: string | null;
   gender: 'male' | 'female' | null;
   voice_pitch: number;
@@ -10,6 +11,14 @@ export interface UserProfile {
 }
 
 export type Gender = 'male' | 'female';
+export type AgeGroup = 'child' | 'teen' | 'adult';
+
+export function ageGroupFromAge(age: number | null | undefined): AgeGroup | null {
+  if (age == null) return null;
+  if (age <= 12) return 'child';
+  if (age <= 17) return 'teen';
+  return 'adult';
+}
 
 /**
  * Compute a person's age in whole years from a date-of-birth string.
