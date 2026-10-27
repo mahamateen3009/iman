@@ -80,7 +80,15 @@ export function saveHadithConfig(config: HadithSourceConfig): void {
 
 /* ─── Supabase-backed conversation helpers ─── */
 
+function isMockUser(userId: string): boolean {
+  return userId === 'demo-user';
+}
+
 export async function loadConversationsRemote(userId: string): Promise<StoredConversation[]> {
+  if (isMockUser(userId)) {
+    return loadConversations().sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 50);
+  }
+
   const { data, error } = await supabase
     .from('conversations')
     .select('id, title, messages, created_at, updated_at')
@@ -103,6 +111,11 @@ export async function upsertConversationRemote(
   userId: string,
   conv: StoredConversation
 ): Promise<void> {
+  if (isMockUser(userId)) {
+    upsertConversation(conv);
+    return;
+  }
+
   const { error } = await supabase
     .from('conversations')
     .upsert({
@@ -118,11 +131,24 @@ export async function upsertConversationRemote(
   }
 }
 
-export async function deleteConversationRemote(id: string): Promise<void> {
+export async function deleteConversationRemote(userId: string, id: string): Promise<void> {
+  if (isMockUser(userId)) {
+    deleteConversation(id);
+    return;
+  }
   await supabase.from('conversations').delete().eq('id', id);
 }
 
-export async function renameConversationRemote(id: string, title: string): Promise<boolean> {
+export async function renameConversationRemote(userId: string, id: string, title: string): Promise<boolean> {
+  if (isMockUser(userId)) {
+    const all = loadConversations();
+    const idx = all.findIndex((c) => c.id === id);
+    if (idx < 0) return false;
+    all[idx].title = title;
+    saveConversations(all);
+    return true;
+  }
+
   const { data, error } = await supabase
     .from('conversations')
     .update({ title, updated_at: new Date().toISOString() })

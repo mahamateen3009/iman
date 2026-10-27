@@ -390,7 +390,7 @@ function App() {
 
   const handleDeleteConversation = useCallback(
     (id: string) => {
-      void deleteConversationRemote(id);
+      void deleteConversationRemote(userId ?? '', id);
       if (userId) {
         void (async () => {
           const refreshed = await loadConversationsRemote(userId);
@@ -410,7 +410,7 @@ function App() {
       setConversations((prev) =>
         prev.map((c) => (c.id === id ? { ...c, title } : c))
       );
-      void renameConversationRemote(id, title);
+      void renameConversationRemote(userId ?? '', id, title);
     },
     [userId]
   );
