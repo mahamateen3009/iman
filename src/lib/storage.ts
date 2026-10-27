@@ -81,12 +81,12 @@ export function saveHadithConfig(config: HadithSourceConfig): void {
 /* ─── Supabase-backed conversation helpers ─── */
 
 function isMockUser(userId: string): boolean {
-  return userId === 'demo-user';
+  return userId.startsWith('mock-');
 }
 
 export async function loadConversationsRemote(userId: string): Promise<StoredConversation[]> {
   if (isMockUser(userId)) {
-    return loadConversations().sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 50);
+    return loadConversations(userId).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 50);
   }
 
   const { data, error } = await supabase
@@ -112,7 +112,7 @@ export async function upsertConversationRemote(
   conv: StoredConversation
 ): Promise<void> {
   if (isMockUser(userId)) {
-    upsertConversation(conv);
+    upsertConversation(userId, conv);
     return;
   }
 
@@ -133,7 +133,7 @@ export async function upsertConversationRemote(
 
 export async function deleteConversationRemote(userId: string, id: string): Promise<void> {
   if (isMockUser(userId)) {
-    deleteConversation(id);
+    deleteConversation(userId, id);
     return;
   }
   await supabase.from('conversations').delete().eq('id', id);
@@ -141,11 +141,11 @@ export async function deleteConversationRemote(userId: string, id: string): Prom
 
 export async function renameConversationRemote(userId: string, id: string, title: string): Promise<boolean> {
   if (isMockUser(userId)) {
-    const all = loadConversations();
+    const all = loadConversations(userId);
     const idx = all.findIndex((c) => c.id === id);
     if (idx < 0) return false;
     all[idx].title = title;
-    saveConversations(all);
+    saveConversations(userId, all);
     return true;
   }
 
@@ -162,11 +162,17 @@ export async function renameConversationRemote(userId: string, id: string, title
   return true;
 }
 
-/* ─── Legacy localStorage conversation helpers (fallback) ─── */
+/* ─── Per-user localStorage conversation helpers ─── */
 
 const HISTORY_KEY = 'noor_chat_history';
-const CONVERSATIONS_KEY = 'noor_conversations';
-const ACTIVE_CONVERSATION_KEY = 'noor_active_conversation';
+
+function conversationsKey(userId: string): string {
+  return `noor_conversations_${userId}`;
+}
+
+function activeConversationKey(userId: string): string {
+  return `noor_active_conversation_${userId}`;
+}
 
 export function loadHistory(): ChatMessage[] {
   try {
@@ -197,9 +203,9 @@ export function clearHistoryStorage(): void {
   }
 }
 
-export function loadConversations(): StoredConversation[] {
+export function loadConversations(userId: string): StoredConversation[] {
   try {
-    const raw = localStorage.getItem(CONVERSATIONS_KEY);
+    const raw = localStorage.getItem(conversationsKey(userId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -209,45 +215,45 @@ export function loadConversations(): StoredConversation[] {
   }
 }
 
-export function saveConversations(conversations: StoredConversation[]): void {
+export function saveConversations(userId: string, conversations: StoredConversation[]): void {
   try {
     const trimmed = conversations.slice(-50);
-    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(trimmed));
+    localStorage.setItem(conversationsKey(userId), JSON.stringify(trimmed));
   } catch {
     /* ignore */
   }
 }
 
-export function upsertConversation(conversation: StoredConversation): void {
-  const all = loadConversations();
+export function upsertConversation(userId: string, conversation: StoredConversation): void {
+  const all = loadConversations(userId);
   const idx = all.findIndex((c) => c.id === conversation.id);
   if (idx >= 0) {
     all[idx] = conversation;
   } else {
     all.unshift(conversation);
   }
-  saveConversations(all);
+  saveConversations(userId, all);
 }
 
-export function deleteConversation(id: string): void {
-  const all = loadConversations().filter((c) => c.id !== id);
-  saveConversations(all);
+export function deleteConversation(userId: string, id: string): void {
+  const all = loadConversations(userId).filter((c) => c.id !== id);
+  saveConversations(userId, all);
 }
 
-export function loadActiveConversationId(): string | null {
+export function loadActiveConversationId(userId: string): string | null {
   try {
-    return localStorage.getItem(ACTIVE_CONVERSATION_KEY);
+    return localStorage.getItem(activeConversationKey(userId));
   } catch {
     return null;
   }
 }
 
-export function saveActiveConversationId(id: string | null): void {
+export function saveActiveConversationId(userId: string, id: string | null): void {
   try {
     if (id) {
-      localStorage.setItem(ACTIVE_CONVERSATION_KEY, id);
+      localStorage.setItem(activeConversationKey(userId), id);
     } else {
-      localStorage.removeItem(ACTIVE_CONVERSATION_KEY);
+      localStorage.removeItem(activeConversationKey(userId));
     }
   } catch {
     /* ignore */

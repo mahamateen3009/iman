@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, BellOff, Check, ChevronLeft, ChevronRight, CloudSun, Moon, Save, Sun, Sunrise, Sunset, X } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
 
 interface PrayerTrackerModalProps { open: boolean; onClose: () => void; userId: string; }
 interface PrayerDay { id: string; prayer_date: string; fajr: boolean; dhuhr: boolean; asr: boolean; maghrib: boolean; isha: boolean; }
@@ -14,8 +13,35 @@ const PRAYERS = [
   { key: 'isha', label: 'Isha', icon: Moon, hint: 'Night' },
 ] as const;
 type PrayerKey = (typeof PRAYERS)[number]['key'];
-const COLUMNS = 'id, prayer_date, fajr, dhuhr, asr, maghrib, isha';
 const DEFAULT_REMINDERS: ReminderSettings = { enabled: false, sound_enabled: true, fajr_time: '05:30', dhuhr_time: '12:30', asr_time: '15:45', maghrib_time: '18:30', isha_time: '20:00' };
+
+const prayerLogKey = (userId: string) => `iman_prayer_log_${userId}`;
+const prayerRemindersKey = (userId: string) => `iman_prayer_reminders_${userId}`;
+
+function loadPrayerLog(userId: string): PrayerDay[] {
+  try {
+    const raw = localStorage.getItem(prayerLogKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as PrayerDay[]) : [];
+  } catch { return []; }
+}
+
+function savePrayerLog(userId: string, days: PrayerDay[]): void {
+  try { localStorage.setItem(prayerLogKey(userId), JSON.stringify(days)); } catch { /* ignore */ }
+}
+
+function loadRemindersLocal(userId: string): ReminderSettings | null {
+  try {
+    const raw = localStorage.getItem(prayerRemindersKey(userId));
+    if (!raw) return null;
+    return JSON.parse(raw) as ReminderSettings;
+  } catch { return null; }
+}
+
+function saveRemindersLocal(userId: string, settings: ReminderSettings): void {
+  try { localStorage.setItem(prayerRemindersKey(userId), JSON.stringify(settings)); } catch { /* ignore */ }
+}
 
 function todayStr(date = new Date()): string { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
 function dayLabel(dateStr: string): string { return new Date(`${dateStr}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); }
@@ -40,34 +66,35 @@ export function PrayerTrackerModal({ open, onClose, userId }: PrayerTrackerModal
     const todayDate = todayStr();
     const first = new Date(month.getFullYear(), month.getMonth(), 1);
     const last = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-    const { data: todayRow, error: todayErr } = await supabase.from('prayer_tracker').select(COLUMNS).eq('user_id', userId).eq('prayer_date', todayDate).maybeSingle();
-    if (todayErr) { setError(todayErr.message); setLoading(false); return; }
+    const allDays = loadPrayerLog(userId);
+    let todayRow = allDays.find((d) => d.prayer_date === todayDate);
     if (!todayRow) {
-      const { data: inserted, error: insertErr } = await supabase.from('prayer_tracker').insert({ prayer_date: todayDate }).select(COLUMNS).maybeSingle();
-      if (insertErr) { setError(insertErr.message); setLoading(false); return; }
-      setToday(inserted as PrayerDay | null);
-    } else setToday(todayRow as PrayerDay);
-    const { data: rows, error: historyErr } = await supabase.from('prayer_tracker').select(COLUMNS).eq('user_id', userId).gte('prayer_date', todayStr(first)).lte('prayer_date', todayStr(last)).order('prayer_date', { ascending: true });
-    if (historyErr) setError(historyErr.message);
-    setHistory((rows as PrayerDay[]) ?? []);
+      todayRow = { id: todayDate, prayer_date: todayDate, fajr: false, dhuhr: false, asr: false, maghrib: false, isha: false };
+      allDays.push(todayRow);
+      savePrayerLog(userId, allDays);
+    }
+    setToday(todayRow);
+    const monthStart = todayStr(first);
+    const monthEnd = todayStr(last);
+    setHistory(allDays.filter((d) => d.prayer_date >= monthStart && d.prayer_date <= monthEnd).sort((a, b) => a.prayer_date.localeCompare(b.prayer_date)));
     const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 6);
-    const { data: statsRows } = await supabase.from('prayer_tracker').select(COLUMNS).eq('user_id', userId).gte('prayer_date', todayStr(weekStart)).lte('prayer_date', todayDate).order('prayer_date', { ascending: true });
-    setWeekStats((statsRows as PrayerDay[]) ?? []);
-    const { data: reminderRow, error: reminderErr } = await supabase.from('prayer_reminders').select('id, enabled, sound_enabled, fajr_time, dhuhr_time, asr_time, maghrib_time, isha_time').eq('user_id', userId).maybeSingle();
-    if (reminderErr) setError(reminderErr.message);
-    if (reminderRow) setReminders(reminderRow as ReminderSettings);
+    const weekStartStr = todayStr(weekStart);
+    setWeekStats(allDays.filter((d) => d.prayer_date >= weekStartStr && d.prayer_date <= todayDate).sort((a, b) => a.prayer_date.localeCompare(b.prayer_date)));
+    const stored = loadRemindersLocal(userId);
+    if (stored) setReminders(stored);
     setLoading(false);
   }, [month, userId]);
 
   useEffect(() => { if (open) void load(); }, [open, load]);
 
   const toggle = useCallback(async (key: PrayerKey) => {
-    if (!today) return;
+    if (!today || !userId) return;
     const next = !today[key]; const optimistic = { ...today, [key]: next };
-    setToday(optimistic); setHistory((previous) => previous.map((day) => day.id === today.id ? optimistic : day));
-    const { error: updateErr } = await supabase.from('prayer_tracker').update({ [key]: next, updated_at: new Date().toISOString() }).eq('id', today.id);
-    if (updateErr) { setError(updateErr.message); setToday(today); setHistory((previous) => previous.map((day) => day.id === today.id ? today : day)); }
-  }, [today]);
+    setToday(optimistic); setHistory((previous) => previous.map((day) => day.prayer_date === today.prayer_date ? optimistic : day));
+    const allDays = loadPrayerLog(userId);
+    const idx = allDays.findIndex((d) => d.prayer_date === today.prayer_date);
+    if (idx >= 0) { allDays[idx] = optimistic; savePrayerLog(userId, allDays); }
+  }, [today, userId]);
 
   const saveReminders = async () => {
     if (!userId) return;
@@ -76,8 +103,9 @@ export function PrayerTrackerModal({ open, onClose, userId }: PrayerTrackerModal
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') { setReminders((current) => ({ ...current, enabled: false })); setError('Notifications are blocked in this browser. You can enable them in browser settings.'); setSavingReminders(false); return; }
     }
-    const { data, error: saveErr } = await supabase.from('prayer_reminders').upsert({ ...reminders, user_id: userId, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select('id, enabled, fajr_time, dhuhr_time, asr_time, maghrib_time, isha_time').maybeSingle();
-    if (saveErr) setError(saveErr.message); else { setReminders(data as ReminderSettings); setNotice(reminders.enabled ? 'Daily prayer reminders are on for this device.' : 'Daily prayer reminders are off.'); }
+    saveRemindersLocal(userId, reminders);
+    setReminders(reminders);
+    setNotice(reminders.enabled ? 'Daily prayer reminders are on for this device.' : 'Daily prayer reminders are off.');
     setSavingReminders(false);
   };
 

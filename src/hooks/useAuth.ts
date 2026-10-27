@@ -19,23 +19,25 @@ import {
  * kept locally so the rest of the app (profile setup, DOB gate, dashboard,
  * chat history) keeps working without a backend session.
  *
- * No UI components were changed — this hook exposes the same shape it did
- * before. The mock only swaps where the session/profile/conversations live.
+ * Each email gets its own stable user ID so accounts are fully isolated.
  */
 
 const MOCK_SESSION_KEY = 'iman_mock_session';
-const MOCK_PROFILE_KEY = 'iman_mock_profile';
-const MOCK_USER_ID = 'demo-user';
 
 interface MockSession {
   user: User;
   access_token: string;
 }
 
+function mockUserIdForEmail(email: string): string {
+  return `mock-${email.toLowerCase().trim()}`;
+}
+
 function buildMockSession(email: string): MockSession {
+  const userId = mockUserIdForEmail(email);
   return {
     user: {
-      id: MOCK_USER_ID,
+      id: userId,
       app_metadata: { provider: 'mock' },
       user_metadata: {},
       aud: 'authenticated',
@@ -75,19 +77,23 @@ function persistMockSession(mock: MockSession | null) {
   }
 }
 
-function loadMockProfile(): UserProfile | null {
+function mockProfileKey(userId: string): string {
+  return `iman_mock_profile_${userId}`;
+}
+
+function loadMockProfile(userId: string): UserProfile | null {
   try {
-    const raw = localStorage.getItem(MOCK_PROFILE_KEY);
+    const raw = localStorage.getItem(mockProfileKey(userId));
     return raw ? (JSON.parse(raw) as UserProfile) : null;
   } catch {
     return null;
   }
 }
 
-function persistMockProfile(profile: UserProfile | null) {
+function persistMockProfile(userId: string, profile: UserProfile | null) {
   try {
-    if (profile) localStorage.setItem(MOCK_PROFILE_KEY, JSON.stringify(profile));
-    else localStorage.removeItem(MOCK_PROFILE_KEY);
+    if (profile) localStorage.setItem(mockProfileKey(userId), JSON.stringify(profile));
+    else localStorage.removeItem(mockProfileKey(userId));
   } catch {
     /* ignore */
   }
@@ -112,7 +118,7 @@ export function useAuth() {
     setProfileLoading(true);
     const mock = loadMockSession();
     if (mock && userId === mock.user.id) {
-      const localProfile = loadMockProfile();
+      const localProfile = loadMockProfile(userId);
       if (localProfile) setProfile(localProfile);
       setProfileLoading(false);
       return localProfile;
@@ -142,7 +148,7 @@ export function useAuth() {
 
       const mock = loadMockSession();
       if (mock && session.user.id === mock.user.id) {
-        const base: UserProfile = loadMockProfile() ?? {
+        const base: UserProfile = loadMockProfile(session.user.id) ?? {
           id: mock.user.id,
           name: '',
           age: null,
@@ -157,7 +163,7 @@ export function useAuth() {
           ...profileUpdates,
           id: mock.user.id,
         };
-        persistMockProfile(merged);
+        persistMockProfile(mock.user.id, merged);
         setProfile(merged);
         return merged;
       }
@@ -180,11 +186,15 @@ export function useAuth() {
     if (!session?.user) return { error: 'Not signed in.' };
     const mock = loadMockSession();
     if (mock && session.user.id === mock.user.id) {
+      const uid = mock.user.id;
       persistMockSession(null);
-      persistMockProfile(null);
+      persistMockProfile(uid, null);
       try {
-        localStorage.removeItem('noor_conversations');
-        localStorage.removeItem('noor_active_conversation');
+        localStorage.removeItem(`noor_conversations_${uid}`);
+        localStorage.removeItem(`noor_active_conversation_${uid}`);
+        localStorage.removeItem(`iman_game_progress_${uid}`);
+        localStorage.removeItem(`iman_prayer_log_${uid}`);
+        localStorage.removeItem(`iman_prayer_reminders_${uid}`);
       } catch {
         /* ignore */
       }
@@ -220,7 +230,7 @@ export function useAuth() {
     if (mock) {
       setSession(sessionToSession(mock));
       setLoading(false);
-      const localProfile = loadMockProfile();
+      const localProfile = loadMockProfile(mock.user.id);
       if (localProfile) setProfile(localProfile);
       return;
     }
@@ -254,7 +264,7 @@ export function useAuth() {
     const mock = buildMockSession(email);
     persistMockSession(mock);
     setSession(sessionToSession(mock));
-    const localProfile = loadMockProfile();
+    const localProfile = loadMockProfile(mock.user.id);
     if (localProfile) setProfile(localProfile);
     else setProfile(null);
   }, []);

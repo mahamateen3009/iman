@@ -169,7 +169,7 @@ function App() {
       const remote = await loadConversationsRemote(userId);
       setConversations(remote);
 
-      const activeId = loadActiveConversationId();
+      const activeId = loadActiveConversationId(userId);
       if (activeId) {
         const active = remote.find((c) => c.id === activeId);
         if (active) {
@@ -209,7 +209,7 @@ function App() {
     };
     if (!activeConversationId) {
       setActiveConversationId(convId);
-      saveActiveConversationId(convId);
+      saveActiveConversationId(userId, convId);
     }
     void upsertConversationRemote(userId, conv);
     void (async () => {
@@ -372,21 +372,21 @@ function App() {
   const handleNewChat = useCallback(() => {
     setMessages([]);
     setActiveConversationId(null);
-    saveActiveConversationId(null);
+    if (userId) saveActiveConversationId(userId, null);
     phaseRef.current = 'normal';
     pendingQueryRef.current = '';
     pendingStudyTopicRef.current = undefined;
-  }, []);
+  }, [userId]);
 
   const handleSelectConversation = useCallback((conv: StoredConversation) => {
     setMessages(conv.messages);
     setActiveConversationId(conv.id);
-    saveActiveConversationId(conv.id);
+    if (userId) saveActiveConversationId(userId, conv.id);
     phaseRef.current = 'normal';
     pendingQueryRef.current = '';
     pendingStudyTopicRef.current = undefined;
     if (window.matchMedia('(max-width: 768px)').matches) setSidebarOpen(false);
-  }, []);
+  }, [userId]);
 
   const handleDeleteConversation = useCallback(
     (id: string) => {
@@ -452,26 +452,28 @@ function App() {
   );
 
   const handleDeleteAccount = useCallback(async () => {
+    const currentUserId = userId;
     const { error } = await deleteAccount();
     if (error) return error;
     setMessages([]);
     setActiveConversationId(null);
-    saveActiveConversationId(null);
+    if (currentUserId) saveActiveConversationId(currentUserId, null);
     phaseRef.current = 'normal';
     pendingQueryRef.current = '';
     pendingStudyTopicRef.current = undefined;
     return null;
-  }, [deleteAccount]);
+  }, [deleteAccount, userId]);
 
   const handleSignOut = useCallback(() => {
+    const currentUserId = userId;
     void signOut();
     setMessages([]);
     setActiveConversationId(null);
-    saveActiveConversationId(null);
+    if (currentUserId) saveActiveConversationId(currentUserId, null);
     phaseRef.current = 'normal';
     pendingQueryRef.current = '';
     pendingStudyTopicRef.current = undefined;
-  }, [signOut]);
+  }, [signOut, userId]);
 
   // Auth gate: show loading state
   if (authLoading) {
@@ -495,7 +497,6 @@ function App() {
       <AuthScreen
         onSignIn={signInWithEmail}
         onSignUp={signUpWithEmail}
-        onDemoLogin={signInWithEmail}
       />
     );
   }

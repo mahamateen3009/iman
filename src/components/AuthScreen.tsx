@@ -1,19 +1,12 @@
 import { useState } from 'react';
-import { Mail, Lock, Sparkles, Moon, Baby, GraduationCap } from 'lucide-react';
+import { Mail, Lock, Sparkles, Moon } from 'lucide-react';
 
 interface AuthScreenProps {
   onSignIn: (email: string, password: string) => Promise<{ error: string | null }>;
   onSignUp: (email: string, password: string) => Promise<{ error: string | null }>;
-  onDemoLogin: (email: string, password: string) => Promise<{ error: string | null }>;
 }
 
-const demoAccounts = [
-  { label: 'Age 5 Child', email: 'child5@test.com', password: 'Password123!', icon: Baby },
-  { label: 'Age 8 Child', email: 'child8@test.com', password: 'Password123!', icon: Baby },
-  { label: 'Age 13 Teen', email: 'teen13@test.com', password: 'Password123!', icon: GraduationCap },
-] as const;
-
-export function AuthScreen({ onSignIn, onSignUp, onDemoLogin }: AuthScreenProps) {
+export function AuthScreen({ onSignIn, onSignUp }: AuthScreenProps) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -122,32 +115,6 @@ export function AuthScreen({ onSignIn, onSignUp, onDemoLogin }: AuthScreenProps)
               {busy ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create Account'}
             </button>
           </form>
-
-          <div className="my-5 flex items-center gap-3 text-[10px] uppercase tracking-wider text-emerald-700/40 dark:text-ink-400">
-            <span className="h-px flex-1 bg-emerald-900/10 dark:bg-gold-400/10" />
-            <span>Demo login</span>
-            <span className="h-px flex-1 bg-emerald-900/10 dark:bg-gold-400/10" />
-          </div>
-          <div className="grid gap-2">
-            {demoAccounts.map(({ label, email: demoEmail, password: demoPassword, icon: Icon }) => (
-              <button
-                key={demoEmail}
-                type="button"
-                onClick={async () => {
-                  setBusy(true);
-                  setError(null);
-                  const result = await onDemoLogin(demoEmail, demoPassword);
-                  setBusy(false);
-                  if (result.error) setError(result.error);
-                }}
-                disabled={busy}
-                className="flex items-center justify-between rounded-xl border border-emerald-900/10 bg-cream-50 px-3 py-2.5 text-left text-xs font-medium text-emerald-900 transition hover:border-emerald-700/30 hover:bg-emerald-50 disabled:opacity-50 dark:border-gold-400/10 dark:bg-ink-700 dark:text-cream-50 dark:hover:bg-ink-600"
-              >
-                <span className="flex items-center gap-2"><Icon className="h-4 w-4 text-emerald-700 dark:text-gold-300" />{label}</span>
-                <span className="text-[10px] text-emerald-700/50 dark:text-ink-400">Test account</span>
-              </button>
-            ))}
-          </div>
         </div>
 
         <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-emerald-700/50 dark:text-ink-400">
