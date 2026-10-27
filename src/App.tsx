@@ -126,8 +126,6 @@ function App() {
     loading: authLoading,
     signInWithEmail,
     signUpWithEmail,
-    signInWithGoogle,
-    resetPassword,
     signOut,
     deleteAccount,
     saveProfile,
@@ -497,8 +495,6 @@ function App() {
       <AuthScreen
         onSignIn={signInWithEmail}
         onSignUp={signUpWithEmail}
-        onGoogleSignIn={signInWithGoogle}
-        onResetPassword={resetPassword}
       />
     );
   }

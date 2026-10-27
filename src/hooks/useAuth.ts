@@ -117,23 +117,6 @@ export function useAuth() {
     return { error: null, session: data.session };
   }, []);
 
-  const resetPassword = useCallback(async (email: string) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
-    });
-    if (error) return { error: error.message };
-    return { error: null };
-  }, []);
-
-  const signInWithGoogle = useCallback(async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin },
-    });
-    if (error) return { error: error.message };
-    return { error: null };
-  }, []);
-
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setSession(null);
@@ -149,8 +132,6 @@ export function useAuth() {
     saveProfile,
     signInWithEmail,
     signUpWithEmail,
-    signInWithGoogle,
-    resetPassword,
     signOut,
     deleteAccount,
   };
