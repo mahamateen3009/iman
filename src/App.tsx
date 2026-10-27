@@ -495,6 +495,7 @@ function App() {
       <AuthScreen
         onSignIn={signInWithEmail}
         onSignUp={signUpWithEmail}
+        onDemoLogin={signInWithEmail}
       />
     );
   }
