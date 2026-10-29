@@ -732,53 +732,231 @@ const DEFAULT_POOL: ReflectionPool = {
   ],
 };
 
-/** Extract the core phrase from a user message to make reflections feel specific. */
-function extractCorePhrase(message: string): string {
-  const cleaned = message.trim().replace(/\s+/g, ' ');
-  if (cleaned.length <= 120) return cleaned;
-
-  // Try to split on natural sentence boundaries
-  const sentences = cleaned.split(/[.!?]+/).filter((s) => s.trim().length > 10);
-  if (sentences.length > 0) {
-    const first = sentences[0].trim();
-    return first.length <= 120 ? first : first.slice(0, 117) + '...';
-  }
-  return cleaned.slice(0, 117) + '...';
+export interface DynamicResponseContext {
+  name?: string;
+  age?: number | null;
+  ageGroup?: 'child' | 'teen' | 'adult' | null;
+  gender?: string | null;
 }
 
-/** Opening phrases that acknowledge what was shared — varied so it doesn't feel scripted. */
-const ACKNOWLEDGMENTS = [
-  "What you shared about {core} — that takes real courage to put into words.",
-  "I can feel the weight behind what you said about {core}. That is not a small thing.",
-  "Reading your words about {core}, I want you to know — what you are feeling is valid.",
-  "The fact that you reached out about {core} tells me something important: you have not given up.",
-  "When you said {core}, I could hear how much this is affecting you. Let us sit with that for a moment.",
-  "Thank you for trusting me with this. What you described — {core} — is genuinely hard.",
-  "{core} — I hear you. That is a heavy thing to carry, and you do not have to carry it alone right now.",
+type ResolvedAgeCategory = 'child' | 'teen' | 'adult' | 'senior';
+
+function resolveAgeCategory(context?: DynamicResponseContext): ResolvedAgeCategory {
+  const age = context?.age;
+  const ageGroup = context?.ageGroup;
+
+  if (age != null) {
+    if (age <= 12) return 'child';
+    if (age <= 17) return 'teen';
+    if (age >= 60) return 'senior';
+    return 'adult';
+  }
+
+  if (ageGroup === 'child') return 'child';
+  if (ageGroup === 'teen') return 'teen';
+  return 'adult';
+}
+
+function formatWithContext(text: string, name?: string): string {
+  const cleanName = name?.trim();
+  if (!cleanName) {
+    return text
+      .replace(/,\s*\{name\}/g, '')
+      .replace(/\{name\},\s*/g, '')
+      .replace(/\{name\}/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+  return text.replace(/\{name\}/g, cleanName);
+}
+
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+const CHILD_REFLECTIONS: Record<string, string[]> = {
+  anxiety: [
+    "It is completely okay to feel a little scared or worried sometimes, {name}. Take a slow, gentle breath with me. Allah loves you so much and He is always watching over you and keeping you safe.",
+    "When your chest feels nervous or your tummy has butterflies, remember that Allah is right beside you, {name}. You are never alone, and it's okay to take things one quiet step at a time.",
+  ],
+  sadness: [
+    "I'm giving your heart a big, warm hug right now, {name}. It is okay to cry or feel sad — even our beloved Prophet (PBUH) had days when he felt sad. Allah hears your quietest prayers, and tomorrow will bring fresh smiles.",
+    "Your feelings matter so much, {name}. It's okay to let the tears out and rest your heart. Allah made you so special, and He is always with you to bring comfort and light back.",
+  ],
+  anger: [
+    "When you feel mad or upset inside, it's okay to pause and blow out a big, soft breath, {name}. You have such a good heart, and taking a calm moment helps all the angry feelings melt away.",
+    "It's totally normal to feel frustrated, {name}. Allah loves when we choose gentleness. Let's take a cool sip of water and give your feelings a peaceful break.",
+  ],
+  motivation: [
+    "You are doing your best, {name}, and Allah sees every single good thing you try to do! Even small steps shine like little stars in the sky. Be proud of yourself today.",
+    "Don't worry if things feel hard or you feel a little tired, {name}. You are learning and growing every day, and Allah loves how hard you try!",
+  ],
+  knowledge: [
+    "Learning new things can be tricky sometimes, {name}, but you are so smart and capable! Say Bismillah, take it one little bit at a time, and remember that Allah helps those who learn.",
+    "Don't worry if a lesson or test feels tough, {name}. Every time you try your best, Allah rewards you. Take a little break and then try again with a happy heart.",
+  ],
+  relationships: [
+    "Sometimes friends or family can say things that hurt our feelings, {name}. But you have a sweet, kind heart. Giving a soft smile or saying kind words is like a superpower that makes Allah very happy.",
+    "Having little arguments happens, {name}. Remember that saying 'I'm sorry' or giving someone a hug makes Allah so pleased with you.",
+  ],
+  default: [
+    "Thank you for sharing your thoughts with me, {name}! Remember that you are safe, you are loved, and Allah is always protecting your gentle heart. You're doing wonderful.",
+    "It's so good to talk with you, {name}. Take a slow, happy breath and know that Allah loves you and hears every thought in your sweet heart.",
+  ],
+};
+
+const CHILD_STEPS: Record<string, string[][]> = {
+  anxiety: [
+    [
+      "Take 3 slow breaths: in through your nose like smelling a flower, out through your mouth like blowing a gentle bubble.",
+      "Drink a cup of cool water and give someone you love a warm hug.",
+      "Whisper a sweet du'a: 'O Allah, please make my heart feel calm and safe.'",
+    ],
+  ],
+  sadness: [
+    [
+      "Rest your head for a few minutes and remember it's okay to let your feelings out.",
+      "Tell a parent or someone you trust how you are feeling inside.",
+      "Think of three little blessings that make you smile, and say Alhamdulillah.",
+    ],
+  ],
+  anger: [
+    [
+      "Take a cool drink of water and count slowly to five.",
+      "Sit down or lie down if you were standing — just like the Prophet (PBUH) taught us.",
+      "Say 'A'udhu billahi minash-shaytanir-rajeem' to blow away the angry feelings.",
+    ],
+  ],
+  default: [
+    [
+      "Take three slow, quiet breaths and say Bismillah.",
+      "Drink a glass of water and take a refreshing little break.",
+      "Say a little prayer to Allah in your own words — He is always listening to you!",
+    ],
+  ],
+};
+
+const TEEN_REFLECTIONS: Record<string, string[]> = {
+  anxiety: [
+    "I hear you, {name}. Being in your shoes with school, expectations, and constant noise can make everything feel suffocating. Please remind yourself that you don't have to carry the whole future today. Allah sees your silent efforts, and doing your best right now is more than enough.",
+    "The stress and racing thoughts you're experiencing are genuinely exhausting, {name}. What you're feeling is completely valid, and it doesn't mean you're failing or weak. Give yourself permission to pause, breathe, and take things one hour at a time.",
+  ],
+  sadness: [
+    "I'm genuinely sorry you're carrying such a heavy heart right now, {name}. Feeling low or disconnected is real and draining, and you don't have to put on a fake smile or pretend you have everything together. Allah knows the pain you keep inside, and He is always on your side.",
+    "Sadness has a way of making you feel completely alone in a crowded room, {name}. But you are not alone, and your feelings are not a flaw in your faith. Be gentle with yourself today — healing isn't a race, and relief will come.",
+  ],
+  motivation: [
+    "Burnout and feeling stuck are so real, {name}. Beating yourself up or comparing your timeline to others only drains your energy further. Take the pressure off. Progress in Islam isn't about being flawless — it's about making one small, honest effort at a time.",
+    "If you feel drained and unmotivated right now, {name}, remember that resting is not quitting. Give your mind a reset, let go of the guilt, and trust that Allah values your sincerity over perfection.",
+  ],
+  knowledge: [
+    "Exams, grades, and pressure from all directions can feel so overwhelming, {name}. But please remember: your worth is never defined by a number or an exam score. Put in your sincere effort, make a quiet du'a, and trust Allah with the outcome.",
+    "Studying can be exhausting when stress takes over your focus, {name}. Step back, take a breath, and tackle just one concept at a time. Allah never lets sincere effort go to waste.",
+  ],
+  relationships: [
+    "Navigating friendships, family tension, and feeling misunderstood is one of the hardest parts of this stage in life, {name}. If you feel hurt or unheard, remember that Allah sees your heart even when people around you don't. Protect your peace and hold your head high.",
+    "It hurts when relationships feel strained or one-sided, {name}. Give yourself some emotional space. You can be kind and respectful without letting others diminish your self-worth.",
+  ],
+  forgiveness: [
+    "Making mistakes and feeling guilty can eat away at you, {name}, but that guilt is actually proof that you have a soft, sincere heart that cares about Allah. Allah's door of forgiveness is always wide open — no mistake is too big for His mercy.",
+    "Please don't trap yourself in shame, {name}. We all fall short, but Islam is about turning back. Ask Allah to forgive you, let the weight go, and start fresh today.",
+  ],
+  default: [
+    "Thank you for being open and sharing what's on your mind, {name}. Life comes with so much silent pressure, and it takes real strength to pause and reflect. You don't have to figure everything out today — take it one gentle step at a time.",
+    "I hear where you're coming from, {name}. Your thoughts and struggles matter, and Allah is closer to you than you might realize. Give yourself some grace today.",
+  ],
+};
+
+const TEEN_STEPS: Record<string, string[][]> = {
+  anxiety: [
+    [
+      "Step away from screens and notifications for 15 minutes to let your mind unclutter.",
+      "Splash cool water on your face or make a fresh wudu to physically reset your nervous system.",
+      "Write down what's bothering you, then mentally hand it over to Allah through a quiet du'a.",
+    ],
+  ],
+  sadness: [
+    [
+      "Give yourself permission to rest without feeling guilty — your mind and body need recovery.",
+      "Reach out to one friend or person who makes you feel safe, even just to say hi.",
+      "Recite or listen to Surah Ad-Duha for a few minutes to feel its soothing comfort.",
+    ],
+  ],
+  default: [
+    [
+      "Pause for 5 minutes of quiet time with no phones or distractions.",
+      "Remind yourself: 'I will take this one hour at a time, not the whole month at once.'",
+      "Make a short, honest du'a from the heart asking Allah for peace and clarity.",
+    ],
+  ],
+};
+
+const SENIOR_REFLECTIONS: Record<string, string[]> = {
+  default: [
+    "May Allah grant peace, health, and serenity to your heart, {name}. The trials and fatigue of life can feel heavy, but every moment of your patience and devotion is elevated and treasured by Allah. May He envelop you in His endless mercy and ease every burden.",
+    "I hear you deeply, respected {name}. Life carries many seasons, but Allah's closeness and love for those who endure with patience never fades. May Allah place tranquility in your chest, grant barakah in your days, and reward you with the highest ease.",
+  ],
+};
+
+const SENIOR_STEPS: string[][] = [
+  [
+    "Rest comfortably and recite 'La hawla wa la quwwata illa billah' slowly, letting your heart find tranquility.",
+    "Engage in gentle remembrance (Tasbih or Astaghfirullah) while sitting in a peaceful space.",
+    "Entrust your worries and loved ones to Allah's infinite wisdom and care.",
+  ],
 ];
 
-/** Connecting phrases that bridge the acknowledgment to the emotional context — varied. */
-const CONNECTIONS = [
-  "What you are going through is not a sign of weakness.",
-  "Your feelings are not a flaw in your character — they are a human response to something real.",
-  "This is one of those moments where being honest about the pain is itself an act of strength.",
-  "Sometimes the hardest part is not the struggle itself but feeling like no one understands it.",
-  "You are not the first person to feel this way, and you will not be the last — but your experience is uniquely yours.",
-  "It takes something out of you to keep going through something like this.",
-  "What I want you to hold onto is that this moment does not define your whole story.",
-];
+const ADULT_REFLECTIONS: Record<string, string[]> = {
+  anxiety: [
+    "I hear how heavy this feels right now, {name}. When your chest is tight and thoughts are racing, it is completely natural to feel exhausted. Please give yourself permission to pause and breathe — you do not have to solve everything today. Allah knows the silent weight you carry, and relief is always closer than it seems.",
+    "Anxiety can make even the simplest tasks feel daunting, {name}. What you are feeling is real and human, not a lack of faith. Let us quiet the noise together for a moment, ground your thoughts, and trust that Allah will carry what is beyond your hands.",
+  ],
+  sadness: [
+    "I am so sorry you are walking through such a heavy valley right now, {name}. Sadness and grief are not signs of weak faith — even the Prophets wept and carried deep heartache. Your pain is valid, and you do not have to pretend to be strong right now. Allah is holding your heart in His care.",
+    "What you are carrying is genuinely hard, {name}, and I want you to know you are not alone in this grief. Give yourself grace and space to feel. Allah never loses sight of a single tear you shed in silence, and ease will find its way back to your heart.",
+  ],
+  patience: [
+    "Enduring long trials takes an immense toll on your soul, {name}. Anyone in your shoes would feel tired. But please know that none of your patience is wasted — Allah records every silent effort, every restraint, and every heavy breath you take. Lean on Him and take this one moment at a time.",
+    "Patience does not mean you cannot feel hurt or tired, {name}; it simply means you keep turning back to Allah even with tired hands. You have made it through difficult days before, and with Allah's grace, you will navigate this one too.",
+  ],
+  hope: [
+    "When the future looks clouded and uncertain, it is easy to lose your footing, {name}. But remember that the One who brings morning light after the darkest night is the same One watching over your life. A closed door is often Allah's gentle redirect toward something far better.",
+    "I hear the quiet exhaustion in your words, {name}. When you cannot see the path forward, trust the One who creates paths from nothing. Hold on to hope, even if it feels as small as a seed right now.",
+  ],
+  motivation: [
+    "Burnout is your mind and body telling you that the pressure has been too high for too long, {name}. Stop measuring yourself by how much you produce. In the sight of Allah, your sincere intention and willingness to keep trying matter far more. Rest without guilt, then take one small step.",
+    "Feeling stuck is a common human experience, {name}. You do not need to overhaul your entire life today — just pick one small, meaningful action and let Allah bless the momentum.",
+  ],
+  anger: [
+    "Feeling anger or deep frustration when you have been wronged or pushed to your limit is completely understandable, {name}. But anger is like carrying hot coals — it only burns the hands that hold it. Take a deep, slow breath, give yourself physical space, and protect your inner peace.",
+    "It is hard when situations feel unfair, {name}. Give your heart time to cool down before deciding your next move. Responding with composure and dignity will leave you with peace, whereas reactive words only bring regret.",
+  ],
+  forgiveness: [
+    "The guilt and regret weighing on you right now are actually signs of a soft, living heart that loves Allah, {name}. Never let regret turn into despair — Allah's mercy is vaster than any sin or mistake we could ever commit. Turn to Him sincerely, let go of the burden, and know that you can begin anew this very second.",
+    "We are all flawed, {name}, but the best among us are those who turn back with humility. You are not defined by your past missteps. Seek Allah's forgiveness, make amends where possible, and allow yourself to heal in His grace.",
+  ],
+  comfort: [
+    "I hear you, {name}. Sometimes the soul simply needs a quiet place to breathe and rest without demands. You are carrying a lot, and it is okay to put the heavy bags down for a while. Allah is nearer to you than your jugular vein, ready to grant peace whenever you ask.",
+    "When life feels too loud or empty, remember that Allah's remembrance is the true anchor for our hearts, {name}. You are deeply cared for, and you do not have to navigate this storm alone.",
+  ],
+  relationships: [
+    "Navigating conflict or heartbreak with loved ones can cut deeper than almost anything else, {name}. It takes real emotional strength to stay gentle when you feel hurt. Speak with kindness, set healthy boundaries where needed, and leave the changing of people's hearts to Allah.",
+    "Relationships are tests of patience and character, {name}. If someone has disappointed you, protect your heart from bitterness. Do your part with sincerity and dignity, and trust Allah to restore what was broken or grant you peace.",
+  ],
+  worship: [
+    "It is beautiful that your heart yearns for closeness to Allah, {name}. Do not be discouraged if your worship feels dry or inconsistent right now. Faith rises and falls like waves; the key is to stay tethered to the daily prayers and simple remembrance. Allah loves the small, steady deeds.",
+    "If you feel distant from your faith, {name}, know that Allah is calling you back with open arms. You do not need to be flawless to come before Him — come to Him broken, tired, or unsure, and He will mend your heart.",
+  ],
+  default: [
+    "Thank you for sharing this with me, {name}. Life carries many silent weights, and it takes genuine courage to acknowledge what you are going through. Please be gentle with yourself right now — you do not have to have everything figured out today. Allah is with you, and relief is near.",
+    "I hear where your heart is, {name}. Whatever you are facing, know that your feelings are valid and you are never alone. Take a slow, grounded breath and allow Allah's peace to enter your thoughts.",
+  ],
+};
 
-/** Concluding thoughts that offer gentle perspective without being preachy — varied. */
-const CONCLUSIONS = [
-  "Be gentle with yourself right now. You do not have to figure everything out today.",
-  "The steps below are not a to-do list — they are just small ways to lighten the load, one at a time.",
-  "You do not have to have all the answers right now. Sometimes just showing up is enough.",
-  "Take what resonates from the steps below and leave the rest. This is your journey.",
-  "Whatever you decide to do, know that reaching out today was already a meaningful step.",
-  "There is no timeline for this. You move at your own pace, and that pace is exactly right.",
-];
-
-export function buildDynamicResponse(message: string): {
+export function buildDynamicResponse(
+  message: string,
+  context?: DynamicResponseContext
+): {
   reflection: string;
   guidance: GuidanceSection;
   steps: string[];
@@ -787,16 +965,35 @@ export function buildDynamicResponse(message: string): {
   const emotions = extractEmotions(message);
   const poolKey = emotions[0] ?? 'general';
   const pool = POOLS[poolKey] ?? DEFAULT_POOL;
+  const ageCategory = resolveAgeCategory(context);
+  const name = context?.name;
 
-  const core = extractCorePhrase(message);
-  const acknowledgment = pickRandom(ACKNOWLEDGMENTS).replace('{core}', core);
-  const connection = pickRandom(CONNECTIONS);
-  const conclusion = pickRandom(CONCLUSIONS);
+  let rawReflection: string;
+  let steps: string[];
 
-  const reflection = `${acknowledgment} ${connection} ${conclusion}`;
+  if (ageCategory === 'child') {
+    const list = CHILD_REFLECTIONS[poolKey] ?? CHILD_REFLECTIONS.default;
+    rawReflection = pickRandom(list);
+    const stepList = CHILD_STEPS[poolKey] ?? CHILD_STEPS.default;
+    steps = pickRandom(stepList);
+  } else if (ageCategory === 'teen') {
+    const list = TEEN_REFLECTIONS[poolKey] ?? TEEN_REFLECTIONS.default;
+    rawReflection = pickRandom(list);
+    const stepList = TEEN_STEPS[poolKey] ?? TEEN_STEPS.default;
+    steps = pickRandom(stepList);
+  } else if (ageCategory === 'senior') {
+    rawReflection = pickRandom(SENIOR_REFLECTIONS.default);
+    steps = pickRandom(SENIOR_STEPS);
+  } else {
+    // Adult: soft emotionally intelligent reflection
+    const list = ADULT_REFLECTIONS[poolKey] ?? (pool.reflections.length > 0 ? pool.reflections : ADULT_REFLECTIONS.default);
+    rawReflection = pickRandom(list);
+    const rawStepSet = pickRandom(pool.steps);
+    steps = rawStepSet.slice(0, 3);
+  }
 
+  const reflection = formatWithContext(rawReflection, name);
   const verse = pickRandom(pool.verses);
-  const stepSet = pickRandom(pool.steps);
   const dua = { ...pickRandom(pool.duas), category: (emotions[0] ?? 'general') as Dua['category'] };
 
   return {
@@ -807,7 +1004,7 @@ export function buildDynamicResponse(message: string): {
       source: verse.source,
       type: 'quran',
     },
-    steps: stepSet,
+    steps,
     dua,
   };
 }

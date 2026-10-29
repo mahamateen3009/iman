@@ -14,8 +14,8 @@ import { modernizeHadithText } from './lib/textModernizer';
 import { hadithTagsMap } from './services/localHadithSource';
 import { isCrisisMessage, buildCrisisResponse } from './lib/crisisResponse';
 import { generateCommentary } from './lib/hadithCommentary';
-import { suggestStudyTopic } from './lib/studySuggestions';
 import { tryAnswerQuestion } from './lib/questionAnswer';
+import { tryConversationalResponse, isStressOrGuidanceRequest, getFriendlyCompanionResponse } from './lib/conversationalChat';
 import {
   loadVoiceEnabled,
   saveVoiceEnabled,
@@ -53,6 +53,7 @@ interface ProfileContext {
   name: string;
   ageGroup: string | null;
   gender: string | null;
+  age?: number | null;
 }
 
 async function buildFullResponse(
@@ -71,7 +72,7 @@ async function buildFullResponse(
   if (qa) {
     return {
       reflection: '',
-      greeting: isFirstMessageOfChat ? `Hi ${userName}!` : undefined,
+      greeting: isFirstMessageOfChat ? `Assalamu Alaikum ${userName}!` : undefined,
       guidance: { quote: '', translation: '', source: '', type: 'quran' },
       steps: [],
       dua: { arabic: '', transliteration: '', english: '', source: '' },
@@ -85,7 +86,12 @@ async function buildFullResponse(
   }
 
   const requiresDisclaimer = isFatwaRequest(message);
-  const dynamic = buildDynamicResponse(message);
+  const dynamic = buildDynamicResponse(message, {
+    name: userName,
+    age: profileContext.age,
+    ageGroup: profileContext.ageGroup as 'child' | 'teen' | 'adult' | null,
+    gender: profileContext.gender,
+  });
   const match = await matchHadiths(message, 1);
 
   const hadiths: HadithReference[] = match.hadiths.map((h) => {
@@ -104,17 +110,19 @@ async function buildFullResponse(
     };
   });
 
-  const studySuggestion = suggestStudyTopic(match.emotions);
+  // Soft, warm greeting on the very first message
+  let greeting: string | undefined;
+  if (isFirstMessageOfChat && userName) {
+    if (profileContext.age != null && profileContext.age <= 12) {
+      greeting = `Assalamu Alaikum little ${userName}! 🌿 I am your companion Iman. How can I help your heart today?`;
+    } else if (profileContext.age != null && profileContext.age >= 60) {
+      greeting = `Assalamu Alaikum wa Rahmatullah, respected ${userName}. May Allah grant you tranquility and ease.`;
+    } else {
+      greeting = `Assalamu Alaikum, ${userName}. I am here to listen and help whenever you need guidance or comfort.`;
+    }
+  }
 
-  // Greeting: "Hi [name]" only on the very first message of a new chat
-  const greeting = isFirstMessageOfChat
-    ? `Hi ${userName}!`
-    : undefined;
-
-  // Try Gemma 4 for natural, personalized reflection and steps.
-  // Falls back to the curated response system if the AI service is
-  // unavailable, rate-limited, or returns invalid content.
-  let reflection: string;
+  let reflection: string = dynamic.reflection;
   let steps: string[] = dynamic.steps;
 
   const gemmaResult = await generateGemmaResponse(
@@ -130,11 +138,6 @@ async function buildFullResponse(
     if (gemmaResult.steps.length > 0) {
       steps = gemmaResult.steps;
     }
-  } else {
-    // Curated fallback: prepend user's name to reflection for personalization
-    reflection = isFirstMessageOfChat
-      ? dynamic.reflection
-      : `${userName}, ${dynamic.reflection.charAt(0).toLowerCase()}${dynamic.reflection.slice(1)}`;
   }
 
   return {
@@ -148,11 +151,8 @@ async function buildFullResponse(
     requiresDisclaimer,
     needsScholar: match.noMatch,
     isCrisis: false,
-    studySuggestion,
   };
 }
-
-type ConversationPhase = 'normal' | 'awaitingFollowupAnswer' | 'awaitingFeelingsAnswer';
 
 function buildChatHistory(messages: ChatMessage[]): ChatHistoryMessage[] {
   return messages.slice(-12).map((m) => {
@@ -171,6 +171,7 @@ function buildProfileContext(profile: UserProfile | null, age: number | null): P
     name: profile?.name ?? '',
     ageGroup: ageGroupFromAge(age) ?? null,
     gender: profile?.gender ?? null,
+    age: age ?? profile?.age ?? null,
   };
 }
 
@@ -197,10 +198,7 @@ function App() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<StoredConversation[]>([]);
 
-  // Conversation state machine for follow-up flow
-  const phaseRef = useRef<ConversationPhase>('normal');
-  const pendingQueryRef = useRef<string>('');
-  const pendingStudyTopicRef = useRef<string | undefined>(undefined);
+
   // Tracks conversation titles the user has renamed, so the auto-title
   // logic in the persistence effect does not overwrite them.
   const renamedTitlesRef = useRef<Map<string, string>>(new Map());
@@ -311,89 +309,85 @@ function App() {
       setMessages((prev) => [...prev, userMsg]);
       setThinking(true);
 
-      const phase = phaseRef.current;
       const isFirstMessageOfChat = messages.length === 0;
 
       void (async () => {
         try {
-          if (phase === 'normal') {
-            // Check if this is the 2nd message in the chat and we have a study topic to ask about
-            const assistantMsgs = messages.filter((m) => m.role === 'assistant' && m.response);
-            const lastAssistantMsg = assistantMsgs[assistantMsgs.length - 1];
-            const studyTopic = lastAssistantMsg?.response?.studySuggestion?.topic;
+          const age = ageFromDateOfBirth(profile?.date_of_birth) ?? profile?.age ?? null;
+          const profileContext = buildProfileContext(profile, age);
 
-            if (!isFirstMessageOfChat && studyTopic) {
-              // 2nd message: ask follow-up before answering
-              pendingQueryRef.current = content;
-              pendingStudyTopicRef.current = studyTopic;
-              phaseRef.current = 'awaitingFollowupAnswer';
+          // 1. Check if the message is a conversational greeting, question, friendship offer, or chitchat
+          const conversationalText = tryConversationalResponse(content, {
+            name: userName,
+            age: profileContext.age,
+            ageGroup: profileContext.ageGroup as 'child' | 'teen' | 'adult' | null,
+          });
 
-              const followupText = `Before I reply, tell me this first — did you study about ${studyTopic}? And did my guidance help you?`;
-
-              const followupMsg: ChatMessage = {
-                id: generateId(),
-                role: 'assistant',
-                content: '',
-                timestamp: Date.now(),
-                simpleText: followupText,
-              };
-              setThinking(false);
-              addAssistantMessage(followupMsg);
-
-              if (voiceEnabled) speakAuto(followupText);
-            } else {
-              // Normal response
-              const history = buildChatHistory(messages);
-              const age = ageFromDateOfBirth(profile?.date_of_birth) ?? profile?.age ?? null;
-              const profileContext = buildProfileContext(profile, age);
-              const response = await buildFullResponse(content, userName, isFirstMessageOfChat, history, profileContext);
-              const assistantMsg: ChatMessage = {
-                id: generateId(),
-                role: 'assistant',
-                content: '',
-                timestamp: Date.now(),
-                response,
-                bookmarked: false,
-              };
-              setMessages((prev) => [...prev, assistantMsg]);
-              setThinking(false);
-
-              if (voiceEnabled) {
-                const fullText = [
-                  response.greeting ?? '',
-                  response.qa ? response.qa.answer : '',
-                  response.reflection,
-                  response.guidance.translation,
-                  response.steps.join('. '),
-                  response.dua.transliteration + '. ' + response.dua.english,
-                ].filter(Boolean).join(' ');
-                speakAuto(fullText);
-              }
-            }
-          } else if (phase === 'awaitingFollowupAnswer') {
-            // User answered the follow-up. Now ask about their feelings.
-            phaseRef.current = 'awaitingFeelingsAnswer';
-
-            const feelingsText = `Thank you for sharing that, ${userName}. Now, how are you feeling? What is on your mind and heart right now?`;
-
-            const feelingsMsg: ChatMessage = {
+          if (conversationalText) {
+            const assistantMsg: ChatMessage = {
               id: generateId(),
               role: 'assistant',
               content: '',
               timestamp: Date.now(),
-              simpleText: feelingsText,
+              simpleText: conversationalText,
             };
+            setMessages((prev) => [...prev, assistantMsg]);
             setThinking(false);
-            addAssistantMessage(feelingsMsg);
 
-            if (voiceEnabled) speakAuto(feelingsText);
-          } else if (phase === 'awaitingFeelingsAnswer') {
-            // User shared their feelings. Now give the full response to their pending query.
-            const pendingQuery = pendingQueryRef.current || content;
-            phaseRef.current = 'normal';
+            if (voiceEnabled) {
+              speakAuto(conversationalText);
+            }
+            return;
+          }
 
-            const age2 = ageFromDateOfBirth(profile?.date_of_birth) ?? profile?.age ?? null;
-            const response = await buildFullResponse(pendingQuery, userName, false, buildChatHistory(messages), buildProfileContext(profile, age2));
+          // 2. Check if this is a factual Islamic QA question (e.g. "is music haram?", "how to do wudu?")
+          const qa = tryAnswerQuestion(content);
+          if (qa) {
+            const assistantMsg: ChatMessage = {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+              response: {
+                reflection: '',
+                guidance: { quote: '', translation: '', source: '', type: 'quran' },
+                steps: [],
+                dua: { arabic: '', transliteration: '', english: '', source: '' },
+                hadiths: [],
+                hadithsFromApi: false,
+                requiresDisclaimer: false,
+                needsScholar: false,
+                isCrisis: false,
+                qa,
+              },
+              bookmarked: false,
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            setThinking(false);
+            if (voiceEnabled) speakAuto(qa.answer);
+            return;
+          }
+
+          // 3. Check if it's a crisis message (suicide / self-harm)
+          if (isCrisisMessage(content)) {
+            const crisisResp = buildCrisisResponse();
+            const assistantMsg: ChatMessage = {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+              response: crisisResp,
+              bookmarked: false,
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            setThinking(false);
+            return;
+          }
+
+          // 4. Check if the user is in stress, asking for a dua, or seeking Islamic emotional guidance
+          if (isStressOrGuidanceRequest(content)) {
+            const history = buildChatHistory(messages);
+            const response = await buildFullResponse(content, userName, isFirstMessageOfChat, history, profileContext);
             const assistantMsg: ChatMessage = {
               id: generateId(),
               role: 'assistant',
@@ -407,7 +401,7 @@ function App() {
 
             if (voiceEnabled) {
               const fullText = [
-                response.qa ? response.qa.answer : '',
+                response.greeting ?? '',
                 response.reflection,
                 response.guidance.translation,
                 response.steps.join('. '),
@@ -415,35 +409,47 @@ function App() {
               ].filter(Boolean).join(' ');
               speakAuto(fullText);
             }
+            return;
+          }
 
-            pendingQueryRef.current = '';
-            pendingStudyTopicRef.current = undefined;
+          // 5. If it's not stress and not asking for a dua/QA, respond naturally like a human friend!
+          const friendlyFallback = getFriendlyCompanionResponse(content, {
+            name: userName,
+            age: profileContext.age,
+            ageGroup: profileContext.ageGroup as 'child' | 'teen' | 'adult' | null,
+          });
+
+          const assistantMsg: ChatMessage = {
+            id: generateId(),
+            role: 'assistant',
+            content: '',
+            timestamp: Date.now(),
+            simpleText: friendlyFallback,
+          };
+          setMessages((prev) => [...prev, assistantMsg]);
+          setThinking(false);
+
+          if (voiceEnabled) {
+            speakAuto(friendlyFallback);
           }
         } catch {
           setThinking(false);
-          phaseRef.current = 'normal';
         }
       })();
     },
-    [voiceEnabled, speakAuto, userId, userName, messages, addAssistantMessage]
+    [voiceEnabled, speakAuto, userId, userName, messages, profile]
   );
 
   const handleNewChat = useCallback(() => {
     setMessages([]);
     setActiveConversationId(null);
     if (userId) saveActiveConversationId(userId, null);
-    phaseRef.current = 'normal';
-    pendingQueryRef.current = '';
-    pendingStudyTopicRef.current = undefined;
   }, [userId]);
 
   const handleSelectConversation = useCallback((conv: StoredConversation) => {
     setMessages(conv.messages);
     setActiveConversationId(conv.id);
     if (userId) saveActiveConversationId(userId, conv.id);
-    phaseRef.current = 'normal';
-    pendingQueryRef.current = '';
-    pendingStudyTopicRef.current = undefined;
     if (window.matchMedia('(max-width: 768px)').matches) setSidebarOpen(false);
   }, [userId]);
 
@@ -517,9 +523,6 @@ function App() {
     setMessages([]);
     setActiveConversationId(null);
     if (currentUserId) saveActiveConversationId(currentUserId, null);
-    phaseRef.current = 'normal';
-    pendingQueryRef.current = '';
-    pendingStudyTopicRef.current = undefined;
     return null;
   }, [deleteAccount, userId]);
 
@@ -529,9 +532,6 @@ function App() {
     setMessages([]);
     setActiveConversationId(null);
     if (currentUserId) saveActiveConversationId(currentUserId, null);
-    phaseRef.current = 'normal';
-    pendingQueryRef.current = '';
-    pendingStudyTopicRef.current = undefined;
   }, [signOut, userId]);
 
   // Auth gate: show loading state

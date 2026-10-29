@@ -241,6 +241,9 @@ export function useAuth() {
       if (data.session?.user) {
         void loadProfile(data.session.user.id);
       }
+    }).catch(() => {
+      setSession(null);
+      setLoading(false);
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, newSession) => {
