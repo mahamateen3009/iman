@@ -151,24 +151,28 @@ Deno.serve(async (req: Request) => {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${openrouterApiKey}`,
     };
-    const requestBody = {
-      messages,
-      temperature: 0.7,
-      max_tokens: 500,
-      top_p: 0.9,
-      response_format: { type: "json_object" },
-    };
-
-    // Try the primary model first, then fall back to the secondary if rate-limited
-    const models = ["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free"];
+    // Try the primary model first, then fall back to alternatives if rate-limited.
+    // Flint is a reasoning model — it needs more tokens for its internal reasoning.
+    const modelConfigs: { model: string; max_tokens: number }[] = [
+      { model: "google/gemma-4-31b-it:free", max_tokens: 500 },
+      { model: "google/gemma-4-26b-a4b-it:free", max_tokens: 500 },
+      { model: "recursive/flint-v1.0:free", max_tokens: 2000 },
+    ];
     let apiResponse: Response | null = null;
-    let apiData: { choices?: { message?: { content?: string } }[] } | null = null;
+    let apiData: { choices?: { message?: { content?: string | null; reasoning?: string | null } }[] } | null = null;
 
-    for (const model of models) {
+    for (const cfg of modelConfigs) {
       apiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: requestHeaders,
-        body: JSON.stringify({ ...requestBody, model }),
+        body: JSON.stringify({
+          model: cfg.model,
+          messages,
+          temperature: 0.7,
+          max_tokens: cfg.max_tokens,
+          top_p: 0.9,
+          response_format: { type: "json_object" },
+        }),
       });
 
       if (apiResponse.ok) {
@@ -177,7 +181,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const errText = await apiResponse.text();
-      console.error(`OpenRouter error (${model}):`, apiResponse.status, errText);
+      console.error(`OpenRouter error (${cfg.model}):`, apiResponse.status, errText);
       // If it's not a rate-limit error, stop trying
       if (apiResponse.status !== 429) {
         break;
@@ -191,7 +195,16 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const rawContent: string = apiData?.choices?.[0]?.message?.content ?? "";
+
+    const msg = apiData?.choices?.[0]?.message;
+    // Reasoning models (e.g. flint) may put the actual answer in content and the
+    // thought process in reasoning. If content is null/empty, try extracting JSON
+    // from the reasoning field as a last resort.
+    let rawContent: string = msg?.content ?? "";
+    if (!rawContent && msg?.reasoning) {
+      const jsonMatch = msg.reasoning.match(/\{[\s\S]*\}/);
+      rawContent = jsonMatch ? jsonMatch[0] : "";
+    }
 
     // Parse the JSON response from Gemma 4
     let reflection = "";
