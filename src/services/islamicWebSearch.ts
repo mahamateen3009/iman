@@ -1,9 +1,27 @@
 import type { WebSource } from '../types/chat';
 
-export interface ScrapedIslamicData {
-  title: string;
-  extract: string;
-  sourceUrl: string;
+export interface LiveWebSearchResult {
+  text: string;
+  webSources: WebSource[];
+}
+
+/**
+ * Normalizes common spelling variations and typos in user questions.
+ */
+function normalizeQuery(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/\balchol\b|\balcohal\b|\balchohol\b/g, 'alcohol')
+    .replace(/\bpermissbile\b|\bpermissable\b|\bpremissible\b/g, 'permissible')
+    .replace(/\boslam\b|\bislamic\b|\bislaam\b/g, 'islam')
+    .replace(/\bquaran\b|\bkuran\b|\bquranic\b/g, 'quran')
+    .replace(/\bhadis\b|\bhadeeth\b|\bhadees\b/g, 'hadith')
+    .replace(/\bmohammed\b|\bmohammad\b|\bmuhamad\b/g, 'muhammad')
+    .replace(/\bprophit\b|\bpropht\b/g, 'prophet')
+    .replace(/\bharam\b|\bharaam\b/g, 'haram')
+    .replace(/\bhalal\b|\bhalaal\b/g, 'halal')
+    .replace(/[?!.,;:]+$/, '')
+    .trim();
 }
 
 /**
@@ -68,93 +86,118 @@ export function getProjectAnswer(message: string, userName?: string): string {
     `4. 🌟 **Deen Explorers**: An engaging interactive curriculum with quests, stories, and badges for learners of all ages.\n` +
     `5. 🎙️ **Voice Audio**: Listen to recitations and responses with built-in voice playback.\n` +
     `6. 🔖 **Bookmarks**: Save important Du'as and reflections to your profile for easy review.\n` +
-    `7. 🌐 **Live Islamic Web Research**: Powered by Google Gemini with live web search to answer questions about Islamic history, Quran, and Hadith.\n\n` +
+    `7. 🌐 **Live Web Research**: Live internet search engine and Google Gemini to answer questions with real-time web citations.\n\n` +
     `How can I assist you with any of these features today?`
   );
 }
 
 /**
- * Checks if a query is asking about Islamic history, historical figures, or teachings.
+ * Searches the live internet for articles, summaries, and scriptural references.
+ * Does NOT read from any local database.
  */
-export function isIslamicHistoryOrTeachingQuestion(message: string): boolean {
-  const q = message.toLowerCase();
-  const keywords = [
-    'history', 'caliph', 'khalifa', 'rashidun', 'abu bakr', 'umar ibn', 'uthman', 'ali ibn abi talib',
-    'badr', 'uhud', 'khandaq', 'mecca', 'medina', 'seerah', 'prophet', 'andalus', 'spain', 'ottoman',
-    'abbasid', 'umayyad', 'salahuddin', 'saladin', 'crusades', 'bukhari', 'muslim', 'tirmidhi',
-    'golden age', 'house of wisdom', 'ibn sina', 'al-razi', 'al-khwarizmi', 'kaaba', 'conquest',
-    'treaty of hudaybiyyah', 'battle of', 'fatimid', 'islamic empire', 'who was', 'who were',
-    'how did islam spread', 'story of', 'companion', 'sahaba'
-  ];
-  return keywords.some((kw) => q.includes(kw));
-}
-
-/**
- * Extracts a search topic from an Islamic history query.
- */
-function extractHistoryTopic(query: string): string {
-  const cleaned = query
-    .toLowerCase()
-    .replace(/[?!.,;:]+$/, '')
-    .replace(/\b(who was|who were|tell me about|what is the history of|what happened at|story of|explain|history of)\b/g, '')
-    .trim();
-
-  // Keyword to Wikipedia article title mapping for high precision
-  const topicMap: Record<string, string> = {
-    'badr': 'Battle_of_Badr',
-    'uhud': 'Battle_of_Uhud',
-    'khandaq': 'Battle_of_the_Trench',
-    'trench': 'Battle_of_the_Trench',
-    'abu bakr': 'Abu_Bakr',
-    'umar': 'Umar',
-    'uthman': 'Uthman',
-    'ali': 'Ali_ibn_Abi_Talib',
-    'salahuddin': 'Saladin',
-    'saladin': 'Saladin',
-    'golden age': 'Islamic_Golden_Age',
-    'house of wisdom': 'House_of_Wisdom',
-    'andalus': 'Al-Andalus',
-    'ottoman': 'Ottoman_Empire',
-    'bukhari': 'Muhammad_al-Bukhari',
-    'hudaybiyyah': 'Treaty_of_al-Hudaybiya',
-    'kaaba': 'Kaaba',
-    'rashidun': 'Rashidun_Caliphate',
-  };
-
-  for (const [key, slug] of Object.entries(topicMap)) {
-    if (cleaned.includes(key)) {
-      return slug;
-    }
-  }
-
-  return cleaned.split(' ').slice(0, 3).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('_');
-}
-
-/**
- * Scrapes factual Islamic history information from Wikipedia REST API.
- * Free, open, and requires no API key.
- */
-export async function scrapeIslamicHistory(query: string): Promise<ScrapedIslamicData | null> {
+export async function searchInternetLive(query: string): Promise<LiveWebSearchResult | null> {
   try {
-    const slug = extractHistoryTopic(query);
-    if (!slug) return null;
+    const normalized = normalizeQuery(query);
+    if (!normalized || normalized.length < 3) return null;
 
-    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(slug)}`;
-    const res = await fetch(url, {
-      headers: {
-        'Accept': 'application/json',
-      },
+    // 1. Live Web Search via Wikipedia API
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(normalized)}&utf8=&format=json&origin=*`;
+    const searchRes = await fetch(searchUrl);
+    if (!searchRes.ok) return null;
+
+    const searchData = await searchRes.json();
+    const hits: Array<{ title: string; snippet: string }> = searchData?.query?.search || [];
+    if (hits.length === 0) return null;
+
+    // Re-score/prioritize hits based on exact subject match
+    const keywords = normalized.split(/\s+/).filter((w) => w.length > 3);
+    const sortedHits = [...hits].sort((a, b) => {
+      let scoreA = 0;
+      let scoreB = 0;
+      for (const kw of keywords) {
+        if (a.title.toLowerCase().includes(kw)) scoreA += 5;
+        if (b.title.toLowerCase().includes(kw)) scoreB += 5;
+      }
+      // Specific high-value Islamic terms
+      if (/khamr|dietary|alcohol/i.test(a.title) && normalized.includes('alcohol')) scoreA += 10;
+      if (/khamr|dietary|alcohol/i.test(b.title) && normalized.includes('alcohol')) scoreB += 10;
+      return scoreB - scoreA;
     });
 
-    if (!res.ok) return null;
-    const data = await res.json();
+    const webSources: WebSource[] = [];
+    const articleExtracts: Array<{ title: string; extract: string; url: string }> = [];
 
-    if (!data.extract || data.extract.length < 30) return null;
+    // Fetch summaries for top 2 relevant hits
+    for (const hit of sortedHits.slice(0, 2)) {
+      try {
+        const slug = hit.title.replace(/ /g, '_');
+        const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(slug)}`;
+        const sumRes = await fetch(sumUrl);
+        if (sumRes.ok) {
+          const sumData = await sumRes.json();
+          if (sumData.extract && sumData.extract.length > 40) {
+            const pageUrl = sumData.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${slug}`;
+            articleExtracts.push({
+              title: sumData.title,
+              extract: sumData.extract,
+              url: pageUrl,
+            });
+            webSources.push({
+              title: sumData.title,
+              url: pageUrl,
+            });
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Also search live Quran web API if relevant
+    let quranQuote = '';
+    const quranKeywords = ['alcohol', 'wine', 'intoxicant', 'fasting', 'prayer', 'charity', 'patience', 'parents', 'zakat', 'marriage', 'justice'];
+    const matchedQuranKeyword = quranKeywords.find((kw) => normalized.includes(kw));
+
+    if (matchedQuranKeyword) {
+      try {
+        const searchKeyword = matchedQuranKeyword === 'alcohol' ? 'intoxicants' : matchedQuranKeyword;
+        const quranUrl = `https://api.alquran.cloud/v1/search/${encodeURIComponent(searchKeyword)}/all/en`;
+        const quranRes = await fetch(quranUrl);
+        if (quranRes.ok) {
+          const quranData = await quranRes.json();
+          const matches = quranData?.data?.matches;
+          if (Array.isArray(matches) && matches.length > 0) {
+            const firstMatch = matches[0];
+            quranQuote = `• **Quran Reference (Live Web)**:\n*"${firstMatch.text.trim()}"*\n— Surah ${firstMatch.surah.englishName} (${firstMatch.surah.number}:${firstMatch.numberInSurah})`;
+            webSources.push({
+              title: `Quran.com (${firstMatch.surah.number}:${firstMatch.numberInSurah})`,
+              url: `https://quran.com/${firstMatch.surah.number}/${firstMatch.numberInSurah}`,
+            });
+          }
+        }
+      } catch {}
+    }
+
+    if (articleExtracts.length === 0 && !quranQuote) {
+      return null;
+    }
+
+    // 3. Format the live internet search answer
+    const sections: string[] = [];
+
+    sections.push(`**Live Internet Search Findings** 🌐`);
+
+    for (const art of articleExtracts) {
+      sections.push(`• **${art.title}**:\n${art.extract}`);
+    }
+
+    if (quranQuote) {
+      sections.push(quranQuote);
+    }
+
+    sections.push(`*(Information queried live from the web. For personalized fatwas, always consult a local scholar.)*`);
 
     return {
-      title: data.title || slug.replace(/_/g, ' '),
-      extract: data.extract,
-      sourceUrl: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${slug}`,
+      text: sections.join('\n\n'),
+      webSources: webSources.slice(0, 4),
     };
   } catch {
     return null;

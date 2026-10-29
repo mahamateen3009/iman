@@ -38,8 +38,7 @@ import { askGemini, isGeminiConfigured } from './services/geminiService';
 import {
   isProjectQuestion,
   getProjectAnswer,
-  isIslamicHistoryOrTeachingQuestion,
-  scrapeIslamicHistory,
+  searchInternetLive,
 } from './services/islamicWebSearch';
 import type { AssistantResponse, ChatMessage, HadithReference, WebSource } from './types/chat';
 import type { Gender, UserProfile, AgeGroup } from './types/profile';
@@ -448,51 +447,20 @@ function App() {
             }
           }
 
-          // 5. If Gemini is not configured yet or didn't return, check for Islamic History web scraping
-          if (isIslamicHistoryOrTeachingQuestion(content)) {
-            const scraped = await scrapeIslamicHistory(content);
-            if (scraped) {
-              const historyText = `**${scraped.title}**\n\n${scraped.extract}\n\n*(Tip: Add your Gemini API key in Settings or .env to unlock full live web research and Q&A!)*`;
-              const assistantMsg: ChatMessage = {
-                id: generateId(),
-                role: 'assistant',
-                content: '',
-                timestamp: Date.now(),
-                simpleText: historyText,
-                webSources: [{ title: scraped.title, url: scraped.sourceUrl }],
-              };
-              setMessages((prev) => [...prev, assistantMsg]);
-              setThinking(false);
-              if (voiceEnabled) speakAuto(stripMarkdownForVoice(scraped.extract));
-              return;
-            }
-          }
-
-          // 6. Check if this is a factual Islamic QA question (e.g. "is music haram?", "how to do wudu?")
-          const qa = tryAnswerQuestion(content);
-          if (qa) {
+          // 5. Run a live search query on the internet (Wikipedia & Quran APIs) and display the data with web links
+          const liveWebResult = await searchInternetLive(content);
+          if (liveWebResult) {
             const assistantMsg: ChatMessage = {
               id: generateId(),
               role: 'assistant',
               content: '',
               timestamp: Date.now(),
-              response: {
-                reflection: '',
-                guidance: { quote: '', translation: '', source: '', type: 'quran' },
-                steps: [],
-                dua: { arabic: '', transliteration: '', english: '', source: '' },
-                hadiths: [],
-                hadithsFromApi: false,
-                requiresDisclaimer: false,
-                needsScholar: false,
-                isCrisis: false,
-                qa,
-              },
-              bookmarked: false,
+              simpleText: liveWebResult.text,
+              webSources: liveWebResult.webSources,
             };
             setMessages((prev) => [...prev, assistantMsg]);
             setThinking(false);
-            if (voiceEnabled) speakAuto(qa.answer);
+            if (voiceEnabled) speakAuto(stripMarkdownForVoice(liveWebResult.text));
             return;
           }
 
