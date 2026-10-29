@@ -135,8 +135,8 @@ export async function askGemini(
     parts: [{ text: prompt }],
   });
 
-  // Try models: gemini-2.0-flash first, then gemini-1.5-flash
-  const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  // Try current and supported models: gemini-3.8-flash first, then fallbacks
+  const models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
   for (const model of models) {
     try {
@@ -234,3 +234,4 @@ function cleanUrlTitle(url: string): string {
     return 'Web Reference';
   }
 }
+
