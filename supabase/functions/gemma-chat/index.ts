@@ -154,9 +154,9 @@ Deno.serve(async (req: Request) => {
     // Try the primary model first, then fall back to alternatives if rate-limited.
     // Flint is a reasoning model — it needs more tokens for its internal reasoning.
     const modelConfigs: { model: string; max_tokens: number }[] = [
+      { model: "recursive/flint-v1.0:free", max_tokens: 2000 },
       { model: "google/gemma-4-31b-it:free", max_tokens: 500 },
       { model: "google/gemma-4-26b-a4b-it:free", max_tokens: 500 },
-      { model: "recursive/flint-v1.0:free", max_tokens: 2000 },
     ];
     let apiResponse: Response | null = null;
     let apiData: { choices?: { message?: { content?: string | null; reasoning?: string | null } }[] } | null = null;
@@ -171,7 +171,7 @@ Deno.serve(async (req: Request) => {
           temperature: 0.7,
           max_tokens: cfg.max_tokens,
           top_p: 0.9,
-          response_format: { type: "json_object" },
+
         }),
       });
 
