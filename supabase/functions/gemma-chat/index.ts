@@ -83,14 +83,7 @@ Deno.serve(async (req: Request) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-    const openrouterApiKey = Deno.env.get("OPENROUTER_API_KEY") ?? "";
-
-    if (!openrouterApiKey) {
-      return new Response(JSON.stringify({ error: "AI service not configured.", fallback: true }), {
-        status: 503,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
     // Verify the caller's JWT
     const userClient = createClient(supabaseUrl, anonKey, {
@@ -103,6 +96,30 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Fetch the OpenRouter API key from the database using the service role key
+    if (!serviceRoleKey) {
+      return new Response(JSON.stringify({ error: "Server not configured.", fallback: true }), {
+        status: 503,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+    const { data: secretRow, error: secretError } = await adminClient
+      .from("app_secrets")
+      .select("value")
+      .eq("key", "OPENROUTER_API_KEY")
+      .maybeSingle();
+
+    if (secretError || !secretRow?.value) {
+      return new Response(JSON.stringify({ error: "AI service not configured.", fallback: true }), {
+        status: 503,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const openrouterApiKey = secretRow.value;
 
     const body: GemmaRequest = await req.json();
     if (!body.message || typeof body.message !== "string") {
@@ -130,32 +147,50 @@ Deno.serve(async (req: Request) => {
 
     messages.push({ role: "user", content: body.message });
 
-    const apiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openrouterApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemma-4-26b-a4b-it:free",
-        messages,
-        temperature: 0.7,
-        max_tokens: 500,
-        top_p: 0.9,
-        response_format: { type: "json_object" },
-      }),
-    });
+    const requestHeaders = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${openrouterApiKey}`,
+    };
+    const requestBody = {
+      messages,
+      temperature: 0.7,
+      max_tokens: 500,
+      top_p: 0.9,
+      response_format: { type: "json_object" },
+    };
 
-    if (!apiResponse.ok) {
+    // Try the primary model first, then fall back to the secondary if rate-limited
+    const models = ["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free"];
+    let apiResponse: Response | null = null;
+    let apiData: { choices?: { message?: { content?: string } }[] } | null = null;
+
+    for (const model of models) {
+      apiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: requestHeaders,
+        body: JSON.stringify({ ...requestBody, model }),
+      });
+
+      if (apiResponse.ok) {
+        apiData = await apiResponse.json();
+        break;
+      }
+
       const errText = await apiResponse.text();
-      console.error("OpenRouter error:", apiResponse.status, errText);
+      console.error(`OpenRouter error (${model}):`, apiResponse.status, errText);
+      // If it's not a rate-limit error, stop trying
+      if (apiResponse.status !== 429) {
+        break;
+      }
+      // Try next model
+    }
+
+    if (!apiData) {
       return new Response(JSON.stringify({ error: "AI service error.", fallback: true }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const apiData = await apiResponse.json();
     const rawContent: string = apiData?.choices?.[0]?.message?.content ?? "";
 
     // Parse the JSON response from Gemma 4
