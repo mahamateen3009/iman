@@ -315,13 +315,18 @@ function App() {
         try {
           const age = ageFromDateOfBirth(profile?.date_of_birth) ?? profile?.age ?? null;
           const profileContext = buildProfileContext(profile, age);
+          const chatHistory = buildChatHistory(messages);
 
           // 1. Check if the message is a conversational greeting, question, friendship offer, or chitchat
-          const conversationalText = tryConversationalResponse(content, {
-            name: userName,
-            age: profileContext.age,
-            ageGroup: profileContext.ageGroup as 'child' | 'teen' | 'adult' | null,
-          });
+          const conversationalText = tryConversationalResponse(
+            content,
+            {
+              name: userName,
+              age: profileContext.age,
+              ageGroup: profileContext.ageGroup as 'child' | 'teen' | 'adult' | null,
+            },
+            chatHistory
+          );
 
           if (conversationalText) {
             const assistantMsg: ChatMessage = {
@@ -385,9 +390,8 @@ function App() {
           }
 
           // 4. Check if the user is in stress, asking for a dua, or seeking Islamic emotional guidance
-          if (isStressOrGuidanceRequest(content)) {
-            const history = buildChatHistory(messages);
-            const response = await buildFullResponse(content, userName, isFirstMessageOfChat, history, profileContext);
+          if (isStressOrGuidanceRequest(content, chatHistory)) {
+            const response = await buildFullResponse(content, userName, isFirstMessageOfChat, chatHistory, profileContext);
             const assistantMsg: ChatMessage = {
               id: generateId(),
               role: 'assistant',
@@ -413,11 +417,15 @@ function App() {
           }
 
           // 5. If it's not stress and not asking for a dua/QA, respond naturally like a human friend!
-          const friendlyFallback = getFriendlyCompanionResponse(content, {
-            name: userName,
-            age: profileContext.age,
-            ageGroup: profileContext.ageGroup as 'child' | 'teen' | 'adult' | null,
-          });
+          const friendlyFallback = getFriendlyCompanionResponse(
+            content,
+            {
+              name: userName,
+              age: profileContext.age,
+              ageGroup: profileContext.ageGroup as 'child' | 'teen' | 'adult' | null,
+            },
+            chatHistory
+          );
 
           const assistantMsg: ChatMessage = {
             id: generateId(),
