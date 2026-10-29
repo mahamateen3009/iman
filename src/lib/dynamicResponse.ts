@@ -695,8 +695,36 @@ const POOLS: Record<string, ReflectionPool> = {
       { arabic: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنْ غَلَبَةِ الْغَضَبِ', transliteration: 'Allahumma inni a\u2019udhu bika min ghalabatil-ghadab', english: 'O Allah, I seek refuge in You from being overcome by anger.', source: 'Based on the Prophet\u2019s guidance on anger management' },
     ],
   },
+  greeting_assistance: {
+    reflections: [
+      "Wa Alaykumu s-Salam wa Rahmatullah{name}! I would be honored to assist you. As your Islamic companion, I am here to share comforting Quranic reflections, authentic Du'as, Sunnah action steps, and spiritual guidance for whatever is on your heart.",
+      "Assalamu Alaikum wa Rahmatullah{name}! It is a blessing to assist you today. Whatever questions you have, whatever weighs on your mind, or whenever you need a heartfelt Du'a, I am here to walk with you with gentleness and Islamic wisdom.",
+      "Welcome{name}! I am always here to assist you with the teachings of our Deen, sincere Du'as, and practical reminders to bring peace and barakah into your day.",
+    ],
+    verses: [
+      { quote: "سَلَامٌ عَلَيْكُمْ كَتَبَ رَبُّكُمْ عَلَىٰ نَفْسِهِ الرَّحْمَةَ", translation: "Peace be upon you. Your Lord has decreed upon Himself mercy. (Qur’an 6:54)", source: "Qur’an, Surah Al-An’am 6:54" },
+      { quote: "وَتَعَاوَنُوا عَلَى الْبِرِّ وَالتَّقْوَىٰ", translation: "And cooperate in righteousness and piety. (Qur’an 5:2)", source: "Qur’an, Surah Al-Ma’idah 5:2" },
+      { quote: "أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ", translation: "Unquestionably, by the remembrance of Allah hearts are assured. (Qur’an 13:28)", source: "Qur’an, Surah Ar-Ra’d 13:28" },
+    ],
+    steps: [
+      [
+        "Begin with Bismillah and renew your intention (Niyyah) for seeking beneficial knowledge and peace.",
+        "Share what is on your heart today — whether you are feeling anxious, joyful, in need of guidance, or seeking a specific Du'a.",
+        "Take a quiet moment to remember Allah through simple Dhikr: SubhanAllah, Alhamdulillah, Allahu Akbar.",
+      ],
+      [
+        "Reflect on one blessing in your life today and say Alhamdulillah from the heart.",
+        "Ask whatever question or spiritual topic you would like to explore together.",
+        "Make a short, sincere Du'a for ease in your affairs and the affairs of your loved ones.",
+      ],
+    ],
+    duas: [
+      { arabic: "اللَّهُمَّ إِنِّي أَسْأَلُكَ عِلْمًا نَافِعًا، وَرِزْقًا طَيِّبًا، وَعَمَلًا مُتَقَبَّلًا", transliteration: "Allahumma inni as'aluka 'ilman nafi'an, wa rizqan tayyiban, wa 'amalan mutaqabbala", english: "O Allah, I ask You for beneficial knowledge, wholesome sustenance, and accepted deeds.", source: "Sunan Ibn Majah 925" },
+      { arabic: "رَبِّ اشْرَحْ لِي صَدْرِي وَيَسِّرْ لِي أَمْرِي", transliteration: "Rabbish-rahli sadri wa yassirli amri", english: "My Lord, expand for me my chest and ease for me my task.", source: "Qur’an, Surah Ta-Ha 20:25-26" },
+      { arabic: "اللَّهُمَّ أَعِنِّي عَلَى ذِكْرِكَ وَشُكْرِكَ وَحُسْنِ عِبَادَتِكَ", transliteration: "Allahumma a'inni 'ala dhikrika wa shukrika wa husni 'ibadatik", english: "O Allah, help me to remember You, thank You, and worship You in the best manner.", source: "Sunan Abi Dawud 1521" },
+    ],
+  },
 };
-
 const DEFAULT_POOL: ReflectionPool = {
   reflections: [
     "Thank you for sharing what is on your heart. Whatever you are carrying, know that this is a safe space to reflect, seek guidance, and find comfort. Could you tell me a little more about what you are feeling or going through?",
@@ -962,8 +990,9 @@ export function buildDynamicResponse(
   steps: string[];
   dua: Dua;
 } {
+  const isGreetingOrAssist = /\b(assist|help|support|salam|assalamu|hello|hi|hey|good morning|good evening|how are you|who are you|can you|would you)\b/i.test(message);
   const emotions = extractEmotions(message);
-  const poolKey = emotions[0] ?? 'general';
+  const poolKey = emotions[0] ?? (isGreetingOrAssist ? 'greeting_assistance' : 'general');
   const pool = POOLS[poolKey] ?? DEFAULT_POOL;
   const ageCategory = resolveAgeCategory(context);
   const name = context?.name;

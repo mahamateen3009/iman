@@ -330,35 +330,7 @@ function App() {
           const profileContext = buildProfileContext(profile, age);
           const chatHistory = buildChatHistory(messages);
 
-          // 1. Check if the message is a conversational greeting, question, friendship offer, or chitchat
-          const conversationalText = tryConversationalResponse(
-            content,
-            {
-              name: userName,
-              age: profileContext.age,
-              ageGroup: profileContext.ageGroup as 'child' | 'teen' | 'adult' | null,
-            },
-            chatHistory
-          );
-
-          if (conversationalText) {
-            const assistantMsg: ChatMessage = {
-              id: generateId(),
-              role: 'assistant',
-              content: '',
-              timestamp: Date.now(),
-              simpleText: conversationalText,
-            };
-            setMessages((prev) => [...prev, assistantMsg]);
-            setThinking(false);
-
-            if (voiceEnabled) {
-              speakAuto(conversationalText);
-            }
-            return;
-          }
-
-          // 2. Check if this is a factual Islamic QA question (e.g. "is music haram?", "is alcohol permissible?", "how to do wudu?")
+          // 1. Check if this is a factual Islamic QA question (e.g. "is music haram?", "is alcohol permissible?", "how to do wudu?")
           const qa = tryAnswerQuestion(content);
           if (qa) {
             const assistantMsg: ChatMessage = {
@@ -386,7 +358,7 @@ function App() {
             return;
           }
 
-          // 3. Check if it's a crisis message (suicide / self-harm)
+          // 2. Check if it's a crisis message (suicide / self-harm)
           if (isCrisisMessage(content)) {
             const crisisResp = buildCrisisResponse();
             const assistantMsg: ChatMessage = {
@@ -402,42 +374,13 @@ function App() {
             return;
           }
 
-          // 4. Check if the user is in stress, asking for a dua, or seeking Islamic emotional guidance
-          if (isStressOrGuidanceRequest(content, chatHistory)) {
-            const response = await buildFullResponse(content, userName, isFirstMessageOfChat, chatHistory, profileContext);
-            const assistantMsg: ChatMessage = {
-              id: generateId(),
-              role: 'assistant',
-              content: '',
-              timestamp: Date.now(),
-              response,
-              bookmarked: false,
-            };
-            setMessages((prev) => [...prev, assistantMsg]);
-            setThinking(false);
-
-            if (voiceEnabled) {
-              const fullText = [
-                response.greeting ?? '',
-                response.reflection,
-                response.guidance.translation,
-                response.steps.join('. '),
-                response.dua.transliteration + '. ' + response.dua.english,
-              ].filter(Boolean).join(' ');
-              speakAuto(fullText);
-            }
-            return;
-          }
-
-          // 5. If it's not stress and not asking for a dua/QA, respond naturally like a human friend!
-          const friendlyFallback = getFriendlyCompanionResponse(
+          // 3. Strictly Islamic teachings, Quran verse, Sunnah action steps, and Du'a format for ALL responses!
+          const response = await buildFullResponse(
             content,
-            {
-              name: userName,
-              age: profileContext.age,
-              ageGroup: profileContext.ageGroup as 'child' | 'teen' | 'adult' | null,
-            },
-            chatHistory
+            userName,
+            isFirstMessageOfChat,
+            chatHistory,
+            profileContext
           );
 
           const assistantMsg: ChatMessage = {
@@ -445,15 +388,23 @@ function App() {
             role: 'assistant',
             content: '',
             timestamp: Date.now(),
-            simpleText: friendlyFallback,
+            response,
+            bookmarked: false,
           };
           setMessages((prev) => [...prev, assistantMsg]);
           setThinking(false);
 
           if (voiceEnabled) {
-            speakAuto(friendlyFallback);
-          }
-        } catch {
+            const fullText = [
+              response.greeting ?? '',
+              response.reflection,
+              response.guidance.translation,
+              response.steps.join('. '),
+              response.dua.transliteration + '. ' + response.dua.english,
+            ].filter(Boolean).join(' ');
+            speakAuto(fullText);
+            }
+          } catch {
           setThinking(false);
         }
       })();
