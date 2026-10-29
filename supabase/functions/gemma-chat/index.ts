@@ -66,11 +66,6 @@ Respond in JSON format only:
 The reflection should weave in the hadith naturally if one was provided. The steps should be practical and specific. Do NOT include any text outside the JSON.`;
 }
 
-interface GeminiContent {
-  role: string;
-  parts: { text: string }[];
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -88,9 +83,9 @@ Deno.serve(async (req: Request) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-    const googleApiKey = Deno.env.get("GOOGLE_AI_API_KEY") ?? "";
+    const openrouterApiKey = Deno.env.get("OPENROUTER_API_KEY") ?? "";
 
-    if (!googleApiKey) {
+    if (!openrouterApiKey) {
       return new Response(JSON.stringify({ error: "AI service not configured.", fallback: true }), {
         status: 503,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -119,45 +114,41 @@ Deno.serve(async (req: Request) => {
 
     const systemPrompt = buildSystemPrompt(body);
 
-    // Build Gemini-format contents (system instruction goes separately)
-    const contents: GeminiContent[] = [];
+    // Build OpenAI-compatible messages for OpenRouter
+    const messages: { role: string; content: string }[] = [
+      { role: "system", content: systemPrompt },
+    ];
 
     // Add recent history (last 6 messages for context)
     const recentHistory = body.history.slice(-6);
     for (const msg of recentHistory) {
-      contents.push({
-        role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: msg.content }],
+      messages.push({
+        role: msg.role === "assistant" ? "assistant" : "user",
+        content: msg.content,
       });
     }
 
-    contents.push({ role: "user", parts: [{ text: body.message }] });
+    messages.push({ role: "user", content: body.message });
 
-    const modelName = "gemma-4-26b-a4b-it";
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${googleApiKey}`;
-
-    const apiResponse = await fetch(apiUrl, {
+    const apiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": `Bearer ${openrouterApiKey}`,
       },
       body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: systemPrompt }],
-        },
-        contents,
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 500,
-          topP: 0.9,
-          responseMimeType: "application/json",
-        },
+        model: "google/gemma-4-26b-a4b-it:free",
+        messages,
+        temperature: 0.7,
+        max_tokens: 500,
+        top_p: 0.9,
+        response_format: { type: "json_object" },
       }),
     });
 
     if (!apiResponse.ok) {
       const errText = await apiResponse.text();
-      console.error("Google AI error:", apiResponse.status, errText);
+      console.error("OpenRouter error:", apiResponse.status, errText);
       return new Response(JSON.stringify({ error: "AI service error.", fallback: true }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -165,7 +156,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const apiData = await apiResponse.json();
-    const rawContent: string = apiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const rawContent: string = apiData?.choices?.[0]?.message?.content ?? "";
 
     // Parse the JSON response from Gemma 4
     let reflection = "";
