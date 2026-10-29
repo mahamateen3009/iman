@@ -9,6 +9,7 @@ import { ProfileSetup } from './components/ProfileSetup';
 import { DobPrompt } from './components/DobPrompt';
 import { buildDynamicResponse } from './lib/dynamicResponse';
 import { matchHadiths, isFatwaRequest } from './lib/hadithMatcher';
+import { generateGemmaResponse } from './lib/gemmaChat';
 import { modernizeHadithText } from './lib/textModernizer';
 import { hadithTagsMap } from './services/localHadithSource';
 import { isCrisisMessage, buildCrisisResponse } from './lib/crisisResponse';
@@ -33,8 +34,8 @@ import { IslamicCalendarModal } from './components/IslamicCalendarModal';
 import { PrayerTrackerModal } from './components/PrayerTrackerModal';
 const DeenExplorers = lazy(() => import('./components/DeenExplorers').then((m) => ({ default: m.DeenExplorers })));
 import type { AssistantResponse, ChatMessage, HadithReference } from './types/chat';
-import type { Gender, UserProfile } from './types/profile';
-import { ageFromDateOfBirth } from './types/profile';
+import type { Gender, UserProfile, AgeGroup } from './types/profile';
+import { ageFromDateOfBirth, ageGroupFromAge } from './types/profile';
 
 function generateId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -43,10 +44,23 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+interface ChatHistoryMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+interface ProfileContext {
+  name: string;
+  ageGroup: string | null;
+  gender: string | null;
+}
+
 async function buildFullResponse(
   message: string,
   userName: string,
-  isFirstMessageOfChat: boolean
+  isFirstMessageOfChat: boolean,
+  history: ChatHistoryMessage[],
+  profileContext: ProfileContext
 ): Promise<AssistantResponse> {
   if (isCrisisMessage(message)) {
     return buildCrisisResponse();
@@ -97,16 +111,37 @@ async function buildFullResponse(
     ? `Hi ${userName}!`
     : undefined;
 
-  // Prepend user's name to reflection for personalization
-  const personalizedReflection = isFirstMessageOfChat
-    ? dynamic.reflection
-    : `${userName}, ${dynamic.reflection.charAt(0).toLowerCase()}${dynamic.reflection.slice(1)}`;
+  // Try Gemma 4 for natural, personalized reflection and steps.
+  // Falls back to the curated response system if the AI service is
+  // unavailable, rate-limited, or returns invalid content.
+  let reflection: string;
+  let steps: string[] = dynamic.steps;
+
+  const gemmaResult = await generateGemmaResponse(
+    message,
+    history,
+    match.emotions,
+    hadiths,
+    profileContext
+  );
+
+  if (gemmaResult) {
+    reflection = gemmaResult.reflection;
+    if (gemmaResult.steps.length > 0) {
+      steps = gemmaResult.steps;
+    }
+  } else {
+    // Curated fallback: prepend user's name to reflection for personalization
+    reflection = isFirstMessageOfChat
+      ? dynamic.reflection
+      : `${userName}, ${dynamic.reflection.charAt(0).toLowerCase()}${dynamic.reflection.slice(1)}`;
+  }
 
   return {
     greeting,
-    reflection: personalizedReflection,
+    reflection,
     guidance: dynamic.guidance,
-    steps: dynamic.steps,
+    steps,
     dua: dynamic.dua,
     hadiths,
     hadithsFromApi: match.fromApi,
@@ -118,6 +153,26 @@ async function buildFullResponse(
 }
 
 type ConversationPhase = 'normal' | 'awaitingFollowupAnswer' | 'awaitingFeelingsAnswer';
+
+function buildChatHistory(messages: ChatMessage[]): ChatHistoryMessage[] {
+  return messages.slice(-12).map((m) => {
+    if (m.role === 'assistant') {
+      const text = m.simpleText
+        ?? [m.response?.greeting, m.response?.reflection, m.response?.guidance.translation]
+            .filter(Boolean).join(' ');
+      return { role: 'assistant', content: text };
+    }
+    return { role: 'user', content: m.content };
+  });
+}
+
+function buildProfileContext(profile: UserProfile | null, age: number | null): ProfileContext {
+  return {
+    name: profile?.name ?? '',
+    ageGroup: ageGroupFromAge(age) ?? null,
+    gender: profile?.gender ?? null,
+  };
+}
 
 function App() {
   const {
@@ -288,7 +343,10 @@ function App() {
               if (voiceEnabled) speakAuto(followupText);
             } else {
               // Normal response
-              const response = await buildFullResponse(content, userName, isFirstMessageOfChat);
+              const history = buildChatHistory(messages);
+              const age = ageFromDateOfBirth(profile?.date_of_birth) ?? profile?.age ?? null;
+              const profileContext = buildProfileContext(profile, age);
+              const response = await buildFullResponse(content, userName, isFirstMessageOfChat, history, profileContext);
               const assistantMsg: ChatMessage = {
                 id: generateId(),
                 role: 'assistant',
@@ -334,7 +392,8 @@ function App() {
             const pendingQuery = pendingQueryRef.current || content;
             phaseRef.current = 'normal';
 
-            const response = await buildFullResponse(pendingQuery, userName, false);
+            const age2 = ageFromDateOfBirth(profile?.date_of_birth) ?? profile?.age ?? null;
+            const response = await buildFullResponse(pendingQuery, userName, false, buildChatHistory(messages), buildProfileContext(profile, age2));
             const assistantMsg: ChatMessage = {
               id: generateId(),
               role: 'assistant',

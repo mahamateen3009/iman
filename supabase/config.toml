@@ -2,3 +2,6 @@ project_id = "iman-companion"
 
 [functions.delete-account]
 verify_jwt = true
+
+[functions.gemma-chat]
+verify_jwt = true

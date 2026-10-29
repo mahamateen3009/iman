@@ -4,6 +4,10 @@
     "delete-account": {
       "hasChanged": false,
       "hash": "d8ed0fa2b05b4f971aca10d3b3a21b9b183a8d9b71e4c813c7cbb7a012952a40"
+    },
+    "gemma-chat": {
+      "hasChanged": false,
+      "hash": "57ce8278bc45c89ced90112c86e3cbfc2cbbcb283ad93c083efc03b795e5a37e"
     }
   }
 }
