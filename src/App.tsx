@@ -33,7 +33,15 @@ import { SettingsModal } from './components/SettingsModal';
 import { IslamicCalendarModal } from './components/IslamicCalendarModal';
 import { PrayerTrackerModal } from './components/PrayerTrackerModal';
 const DeenExplorers = lazy(() => import('./components/DeenExplorers').then((m) => ({ default: m.DeenExplorers })));
-import type { AssistantResponse, ChatMessage, HadithReference } from './types/chat';
+import { Globe, ExternalLink } from 'lucide-react';
+import { askGemini, isGeminiConfigured } from './services/geminiService';
+import {
+  isProjectQuestion,
+  getProjectAnswer,
+  isIslamicHistoryOrTeachingQuestion,
+  scrapeIslamicHistory,
+} from './services/islamicWebSearch';
+import type { AssistantResponse, ChatMessage, HadithReference, WebSource } from './types/chat';
 import type { Gender, UserProfile, AgeGroup } from './types/profile';
 import { ageFromDateOfBirth, ageGroupFromAge } from './types/profile';
 
@@ -152,6 +160,10 @@ async function buildFullResponse(
     needsScholar: match.noMatch,
     isCrisis: false,
   };
+}
+
+function stripMarkdownForVoice(text: string): string {
+  return text.replace(/[*#_`>]/g, '').trim();
 }
 
 function buildChatHistory(messages: ChatMessage[]): ChatHistoryMessage[] {
@@ -340,12 +352,123 @@ function App() {
             setThinking(false);
 
             if (voiceEnabled) {
-              speakAuto(conversationalText);
+              speakAuto(stripMarkdownForVoice(conversationalText));
             }
             return;
           }
 
-          // 2. Check if this is a factual Islamic QA question (e.g. "is music haram?", "how to do wudu?")
+          // 2. Check if the user is in stress, asking for a dua, or seeking Islamic emotional guidance
+          if (isStressOrGuidanceRequest(content, chatHistory)) {
+            const response = await buildFullResponse(content, userName, isFirstMessageOfChat, chatHistory, profileContext);
+            const assistantMsg: ChatMessage = {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+              response,
+              bookmarked: false,
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            setThinking(false);
+
+            if (voiceEnabled) {
+              const fullText = [
+                response.greeting ?? '',
+                response.reflection,
+                response.guidance.translation,
+                response.steps.join('. '),
+                response.dua.transliteration + '. ' + response.dua.english,
+              ].filter(Boolean).join(' ');
+              speakAuto(fullText);
+            }
+            return;
+          }
+
+          // 3. Check if this is a question about the Iman project or its features
+          if (isProjectQuestion(content)) {
+            if (isGeminiConfigured()) {
+              const geminiResp = await askGemini(content, chatHistory, {
+                userName,
+                age: profileContext.age,
+                ageGroup: profileContext.ageGroup as any,
+                gender: profileContext.gender,
+              });
+              if (geminiResp?.text) {
+                const assistantMsg: ChatMessage = {
+                  id: generateId(),
+                  role: 'assistant',
+                  content: '',
+                  timestamp: Date.now(),
+                  simpleText: geminiResp.text,
+                  webSources: geminiResp.webSources,
+                };
+                setMessages((prev) => [...prev, assistantMsg]);
+                setThinking(false);
+                if (voiceEnabled) speakAuto(stripMarkdownForVoice(geminiResp.text));
+                return;
+              }
+            }
+
+            const projectText = getProjectAnswer(content, userName);
+            const assistantMsg: ChatMessage = {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+              simpleText: projectText,
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            setThinking(false);
+            if (voiceEnabled) speakAuto(stripMarkdownForVoice(projectText));
+            return;
+          }
+
+          // 4. Try Gemini AI with live web search grounding (for Islamic teachings, history, and questions)
+          if (isGeminiConfigured()) {
+            const geminiResp = await askGemini(content, chatHistory, {
+              userName,
+              age: profileContext.age,
+              ageGroup: profileContext.ageGroup as any,
+              gender: profileContext.gender,
+            });
+
+            if (geminiResp?.text) {
+              const assistantMsg: ChatMessage = {
+                id: generateId(),
+                role: 'assistant',
+                content: '',
+                timestamp: Date.now(),
+                simpleText: geminiResp.text,
+                webSources: geminiResp.webSources,
+              };
+              setMessages((prev) => [...prev, assistantMsg]);
+              setThinking(false);
+              if (voiceEnabled) speakAuto(stripMarkdownForVoice(geminiResp.text));
+              return;
+            }
+          }
+
+          // 5. If Gemini is not configured yet or didn't return, check for Islamic History web scraping
+          if (isIslamicHistoryOrTeachingQuestion(content)) {
+            const scraped = await scrapeIslamicHistory(content);
+            if (scraped) {
+              const historyText = `**${scraped.title}**\n\n${scraped.extract}\n\n*(Tip: Add your Gemini API key in Settings or .env to unlock full live web research and Q&A!)*`;
+              const assistantMsg: ChatMessage = {
+                id: generateId(),
+                role: 'assistant',
+                content: '',
+                timestamp: Date.now(),
+                simpleText: historyText,
+                webSources: [{ title: scraped.title, url: scraped.sourceUrl }],
+              };
+              setMessages((prev) => [...prev, assistantMsg]);
+              setThinking(false);
+              if (voiceEnabled) speakAuto(stripMarkdownForVoice(scraped.extract));
+              return;
+            }
+          }
+
+          // 6. Check if this is a factual Islamic QA question (e.g. "is music haram?", "how to do wudu?")
           const qa = tryAnswerQuestion(content);
           if (qa) {
             const assistantMsg: ChatMessage = {
@@ -373,50 +496,7 @@ function App() {
             return;
           }
 
-          // 3. Check if it's a crisis message (suicide / self-harm)
-          if (isCrisisMessage(content)) {
-            const crisisResp = buildCrisisResponse();
-            const assistantMsg: ChatMessage = {
-              id: generateId(),
-              role: 'assistant',
-              content: '',
-              timestamp: Date.now(),
-              response: crisisResp,
-              bookmarked: false,
-            };
-            setMessages((prev) => [...prev, assistantMsg]);
-            setThinking(false);
-            return;
-          }
-
-          // 4. Check if the user is in stress, asking for a dua, or seeking Islamic emotional guidance
-          if (isStressOrGuidanceRequest(content, chatHistory)) {
-            const response = await buildFullResponse(content, userName, isFirstMessageOfChat, chatHistory, profileContext);
-            const assistantMsg: ChatMessage = {
-              id: generateId(),
-              role: 'assistant',
-              content: '',
-              timestamp: Date.now(),
-              response,
-              bookmarked: false,
-            };
-            setMessages((prev) => [...prev, assistantMsg]);
-            setThinking(false);
-
-            if (voiceEnabled) {
-              const fullText = [
-                response.greeting ?? '',
-                response.reflection,
-                response.guidance.translation,
-                response.steps.join('. '),
-                response.dua.transliteration + '. ' + response.dua.english,
-              ].filter(Boolean).join(' ');
-              speakAuto(fullText);
-            }
-            return;
-          }
-
-          // 5. If it's not stress and not asking for a dua/QA, respond naturally like a human friend!
+          // 7. Fallback friendly companion response
           const friendlyFallback = getFriendlyCompanionResponse(
             content,
             {
@@ -438,7 +518,7 @@ function App() {
           setThinking(false);
 
           if (voiceEnabled) {
-            speakAuto(friendlyFallback);
+            speakAuto(stripMarkdownForVoice(friendlyFallback));
           }
         } catch {
           setThinking(false);
@@ -651,7 +731,7 @@ function App() {
                   msg.role === 'user' ? (
                     <UserBubble key={msg.id} message={msg} />
                   ) : msg.simpleText ? (
-                    <SimpleAssistantBubble key={msg.id} text={msg.simpleText} />
+                    <SimpleAssistantBubble key={msg.id} text={msg.simpleText} webSources={msg.webSources} />
                   ) : (
                     <ResponseCard
                       key={msg.id}
@@ -716,11 +796,40 @@ function UserBubble({ message }: { message: ChatMessage }) {
   );
 }
 
-function SimpleAssistantBubble({ text }: { text: string }) {
+function SimpleAssistantBubble({
+  text,
+  webSources,
+}: {
+  text: string;
+  webSources?: WebSource[];
+}) {
   return (
     <div className="animate-fade-in-up flex justify-start">
       <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-emerald-900/10 bg-white/80 px-4 py-3 text-sm leading-relaxed text-emerald-900 shadow-card dark:border-gold-400/12 dark:bg-ink-800/70 dark:text-cream-50">
-        {text}
+        <div className="whitespace-pre-wrap">{text}</div>
+
+        {webSources && webSources.length > 0 && (
+          <div className="mt-3 border-t border-emerald-900/10 pt-2.5 dark:border-gold-400/15">
+            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 dark:text-gold-300">
+              <Globe className="h-3.5 w-3.5 text-emerald-600 dark:text-gold-400" />
+              <span>Web Sources & Grounding</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {webSources.map((source, idx) => (
+                <a
+                  key={idx}
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-900/8 px-2.5 py-1 text-[10px] font-medium text-emerald-800 transition hover:bg-emerald-700/15 hover:text-emerald-900 dark:bg-gold-400/10 dark:text-gold-200 dark:hover:bg-gold-400/20"
+                >
+                  <span className="truncate max-w-[200px]">{source.title}</span>
+                  <ExternalLink className="h-2.5 w-2.5 opacity-70 shrink-0" />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

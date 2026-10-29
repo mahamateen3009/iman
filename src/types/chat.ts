@@ -108,6 +108,11 @@ export interface CrisisResource {
   available: string;
 }
 
+export interface WebSource {
+  title: string;
+  url: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -116,6 +121,7 @@ export interface ChatMessage {
   response?: AssistantResponse;
   bookmarked?: boolean;
   simpleText?: string;
+  webSources?: WebSource[];
 }
 
 export type { HadithResult };

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   X,
   Check,
@@ -6,8 +6,15 @@ import {
   Loader2,
   User,
   Trash2,
+  Sparkles,
+  Key,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  Globe,
 } from 'lucide-react';
 import type { UserProfile } from '../types/profile';
+import { getGeminiApiKey, setGeminiApiKey } from '../services/geminiService';
 
 interface SettingsModalProps {
   open: boolean;
@@ -29,6 +36,18 @@ export function SettingsModal({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Gemini API Key state
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [keySaved, setKeySaved] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setApiKeyInput(getGeminiApiKey());
+      setKeySaved(false);
+    }
+  }, [open]);
 
   if (!open) return null;
 
@@ -57,6 +76,14 @@ export function SettingsModal({
     }
   };
 
+  const handleSaveApiKey = () => {
+    setGeminiApiKey(apiKeyInput);
+    setKeySaved(true);
+    setTimeout(() => setKeySaved(false), 2500);
+  };
+
+  const hasConfiguredKey = apiKeyInput.trim().length > 0;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
@@ -75,26 +102,102 @@ export function SettingsModal({
             </span>
             <div>
               <h2 className="font-serif text-lg font-bold text-emerald-900 dark:text-cream-50">
-                Profile
+                Settings & Profile
               </h2>
               <p className="text-[11px] text-emerald-900/50 dark:text-ink-400">
-                Your account & data
+                Account, AI integration & preferences
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="rounded-lg p-2 text-emerald-900/60 transition-colors hover:bg-emerald-900/10 dark:text-ink-300 dark:hover:bg-gold-400/10"
-            aria-label="Close profile"
+            aria-label="Close settings"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-6">
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Gemini AI & Web Research section */}
+          <div className="rounded-xl border border-emerald-900/10 bg-white/70 p-4 dark:border-gold-400/15 dark:bg-ink-700/40">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-emerald-700 dark:text-gold-300" />
+                <h3 className="text-sm font-semibold text-emerald-900 dark:text-cream-50">
+                  Google Gemini AI & Live Web Search
+                </h3>
+              </div>
+              <span
+                className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium ${
+                  hasConfiguredKey
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                    : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                }`}
+              >
+                <Globe className="h-2.5 w-2.5" />
+                {hasConfiguredKey ? 'Active' : 'Key Needed'}
+              </span>
+            </div>
+
+            <p className="mb-3 text-xs leading-relaxed text-emerald-900/70 dark:text-ink-200">
+              Power Iman with Google Gemini 2.0 and live web grounding. Enables the chatbot to answer questions about the project, Islamic history, and teachings with live web citations.
+            </p>
+
+            <div className="space-y-2">
+              <label className="block text-[11px] font-medium text-emerald-900/70 dark:text-ink-300">
+                Gemini API Key
+              </label>
+              <div className="relative flex items-center">
+                <div className="pointer-events-none absolute left-3 text-emerald-900/40 dark:text-ink-400">
+                  <Key className="h-3.5 w-3.5" />
+                </div>
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  placeholder="AIzaSy... (or set VITE_GEMINI_API_KEY in .env)"
+                  className="w-full rounded-xl border border-emerald-900/15 bg-white/90 py-2 pl-9 pr-20 text-xs text-emerald-900 placeholder-emerald-900/40 transition focus:border-emerald-700 focus:outline-none focus:ring-1 focus:ring-emerald-700 dark:border-gold-400/20 dark:bg-ink-800 dark:text-cream-50 dark:placeholder-ink-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-2.5 rounded p-1 text-emerald-900/40 hover:text-emerald-900 dark:text-ink-400 dark:hover:text-ink-200"
+                >
+                  {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 hover:text-emerald-800 dark:text-gold-300 dark:hover:text-gold-200"
+                >
+                  <span>Get free key at Google AI Studio</span>
+                  <ExternalLink className="h-2.5 w-2.5" />
+                </a>
+
+                <button
+                  type="button"
+                  onClick={handleSaveApiKey}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-soft transition-all ${
+                    keySaved
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-emerald-800 text-white hover:bg-emerald-700 dark:bg-gold-500 dark:text-ink-950 dark:hover:bg-gold-400'
+                  }`}
+                >
+                  {keySaved ? <Check className="h-3 w-3" /> : null}
+                  {keySaved ? 'Saved!' : 'Save Key'}
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* My Profile section (read-only) */}
-          <div className="mb-5 rounded-xl border border-emerald-900/10 bg-white/50 p-4 dark:border-gold-400/10 dark:bg-ink-700/30">
+          <div className="rounded-xl border border-emerald-900/10 bg-white/50 p-4 dark:border-gold-400/10 dark:bg-ink-700/30">
             <div className="mb-3 flex items-center gap-2">
               <User className="h-4 w-4 text-emerald-700 dark:text-gold-300" />
               <h3 className="text-sm font-semibold text-emerald-900 dark:text-cream-50">
@@ -103,8 +206,7 @@ export function SettingsModal({
             </div>
             <p className="mb-3 text-xs leading-relaxed text-emerald-900/60 dark:text-ink-300">
               These details were set when you created your account. They shape your
-              greeting, voice, and the Deen Explorers difficulty tier. They can't be
-              changed after sign-up.
+              greeting, voice, and the Deen Explorers difficulty tier.
             </p>
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <ProfileField label="Name" value={profile?.name || '—'} />
