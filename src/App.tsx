@@ -30,6 +30,7 @@ import {
 import { useSpeechSynthesis } from './hooks/useSpeechSynthesis';
 import { useAuth } from './hooks/useAuth';
 import { SettingsModal } from './components/SettingsModal';
+import { WebSearchModal } from './components/WebSearchModal';
 import { IslamicCalendarModal } from './components/IslamicCalendarModal';
 import { PrayerTrackerModal } from './components/PrayerTrackerModal';
 const DeenExplorers = lazy(() => import('./components/DeenExplorers').then((m) => ({ default: m.DeenExplorers })));
@@ -206,6 +207,7 @@ function App() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
   const [prayerOpen, setPrayerOpen] = useState(false);
+  const [webSearchOpen, setWebSearchOpen] = useState(false);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<StoredConversation[]>([]);
 
@@ -351,12 +353,56 @@ function App() {
             setThinking(false);
 
             if (voiceEnabled) {
-              speakAuto(stripMarkdownForVoice(conversationalText));
+              speakAuto(conversationalText);
             }
             return;
           }
 
-          // 2. Check if the user is in stress, asking for a dua, or seeking Islamic emotional guidance
+          // 2. Check if this is a factual Islamic QA question (e.g. "is music haram?", "is alcohol permissible?", "how to do wudu?")
+          const qa = tryAnswerQuestion(content);
+          if (qa) {
+            const assistantMsg: ChatMessage = {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+              response: {
+                reflection: '',
+                guidance: { quote: '', translation: '', source: '', type: 'quran' },
+                steps: [],
+                dua: { arabic: '', transliteration: '', english: '', source: '' },
+                hadiths: [],
+                hadithsFromApi: false,
+                requiresDisclaimer: false,
+                needsScholar: false,
+                isCrisis: false,
+                qa,
+              },
+              bookmarked: false,
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            setThinking(false);
+            if (voiceEnabled) speakAuto(qa.answer);
+            return;
+          }
+
+          // 3. Check if it's a crisis message (suicide / self-harm)
+          if (isCrisisMessage(content)) {
+            const crisisResp = buildCrisisResponse();
+            const assistantMsg: ChatMessage = {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+              response: crisisResp,
+              bookmarked: false,
+            };
+            setMessages((prev) => [...prev, assistantMsg]);
+            setThinking(false);
+            return;
+          }
+
+          // 4. Check if the user is in stress, asking for a dua, or seeking Islamic emotional guidance
           if (isStressOrGuidanceRequest(content, chatHistory)) {
             const response = await buildFullResponse(content, userName, isFirstMessageOfChat, chatHistory, profileContext);
             const assistantMsg: ChatMessage = {
@@ -383,88 +429,7 @@ function App() {
             return;
           }
 
-          // 3. Check if this is a question about the Iman project or its features
-          if (isProjectQuestion(content)) {
-            if (isGeminiConfigured()) {
-              const geminiResp = await askGemini(content, chatHistory, {
-                userName,
-                age: profileContext.age,
-                ageGroup: profileContext.ageGroup as any,
-                gender: profileContext.gender,
-              });
-              if (geminiResp?.text) {
-                const assistantMsg: ChatMessage = {
-                  id: generateId(),
-                  role: 'assistant',
-                  content: '',
-                  timestamp: Date.now(),
-                  simpleText: geminiResp.text,
-                  webSources: geminiResp.webSources,
-                };
-                setMessages((prev) => [...prev, assistantMsg]);
-                setThinking(false);
-                if (voiceEnabled) speakAuto(stripMarkdownForVoice(geminiResp.text));
-                return;
-              }
-            }
-
-            const projectText = getProjectAnswer(content, userName);
-            const assistantMsg: ChatMessage = {
-              id: generateId(),
-              role: 'assistant',
-              content: '',
-              timestamp: Date.now(),
-              simpleText: projectText,
-            };
-            setMessages((prev) => [...prev, assistantMsg]);
-            setThinking(false);
-            if (voiceEnabled) speakAuto(stripMarkdownForVoice(projectText));
-            return;
-          }
-
-          // 4. Try Gemini AI with live web search grounding (for Islamic teachings, history, and questions)
-          if (isGeminiConfigured()) {
-            const geminiResp = await askGemini(content, chatHistory, {
-              userName,
-              age: profileContext.age,
-              ageGroup: profileContext.ageGroup as any,
-              gender: profileContext.gender,
-            });
-
-            if (geminiResp?.text) {
-              const assistantMsg: ChatMessage = {
-                id: generateId(),
-                role: 'assistant',
-                content: '',
-                timestamp: Date.now(),
-                simpleText: geminiResp.text,
-                webSources: geminiResp.webSources,
-              };
-              setMessages((prev) => [...prev, assistantMsg]);
-              setThinking(false);
-              if (voiceEnabled) speakAuto(stripMarkdownForVoice(geminiResp.text));
-              return;
-            }
-          }
-
-          // 5. Run a live search query on the internet (Wikipedia & Quran APIs) and display the data with web links
-          const liveWebResult = await searchInternetLive(content);
-          if (liveWebResult) {
-            const assistantMsg: ChatMessage = {
-              id: generateId(),
-              role: 'assistant',
-              content: '',
-              timestamp: Date.now(),
-              simpleText: liveWebResult.text,
-              webSources: liveWebResult.webSources,
-            };
-            setMessages((prev) => [...prev, assistantMsg]);
-            setThinking(false);
-            if (voiceEnabled) speakAuto(stripMarkdownForVoice(liveWebResult.text));
-            return;
-          }
-
-          // 7. Fallback friendly companion response
+          // 5. If it's not stress and not asking for a dua/QA, respond naturally like a human friend!
           const friendlyFallback = getFriendlyCompanionResponse(
             content,
             {
@@ -486,7 +451,7 @@ function App() {
           setThinking(false);
 
           if (voiceEnabled) {
-            speakAuto(stripMarkdownForVoice(friendlyFallback));
+            speakAuto(friendlyFallback);
           }
         } catch {
           setThinking(false);
@@ -665,6 +630,7 @@ function App() {
         onOpenCalendar={() => setCalendarOpen(true)}
         onOpenGame={() => setGameOpen(true)}
         onOpenPrayer={() => setPrayerOpen(true)}
+        onOpenWebSearch={() => setWebSearchOpen(true)}
         sidebarOpen={sidebarOpen}
         userName={userName}
         age={effectiveAge}

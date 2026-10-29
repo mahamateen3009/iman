@@ -1,4 +1,4 @@
-import { PanelLeft, LogOut, UserCircle, CalendarDays, Gamepad2, Moon } from 'lucide-react';
+import { PanelLeft, LogOut, UserCircle, CalendarDays, Gamepad2, Moon, Globe } from 'lucide-react';
 
 interface NavbarProps {
   theme: 'light' | 'dark';
@@ -7,6 +7,7 @@ interface NavbarProps {
   onOpenCalendar: () => void;
   onOpenGame: () => void;
   onOpenPrayer: () => void;
+  onOpenWebSearch: () => void;
   sidebarOpen: boolean;
   userName?: string;
   age?: number | null;
@@ -19,6 +20,7 @@ export function Navbar({
   onOpenCalendar,
   onOpenGame,
   onOpenPrayer,
+  onOpenWebSearch,
   sidebarOpen,
   userName,
   age,
@@ -52,6 +54,16 @@ export function Navbar({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Live AI Web Search & Scraping */}
+        <button
+          onClick={onOpenWebSearch}
+          className="flex items-center gap-1.5 rounded-full border border-emerald-700/25 bg-gradient-to-r from-emerald-700/10 to-gold-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-900 transition-all hover:from-emerald-700/20 hover:to-gold-400/20"
+          aria-label="Open AI Web Research"
+        >
+          <Globe className="h-4 w-4 text-emerald-700" />
+          <span className="hidden sm:inline">Web Search</span>
+        </button>
+
         {/* Prayer tracker */}
         <button
           onClick={onOpenPrayer}
@@ -103,7 +115,7 @@ export function Navbar({
             {onSignOut && (
               <button
                 onClick={onSignOut}
-                className="rounded-md p-1 text-emerald-700/60 transition-colors hover:bg-emerald-900/10 hover:text-emerald-900"
+                className="rounded p-0.5 text-emerald-900/60 transition-colors hover:bg-emerald-900/10 hover:text-emerald-900"
                 aria-label="Sign out"
               >
                 <LogOut className="h-3.5 w-3.5" />
