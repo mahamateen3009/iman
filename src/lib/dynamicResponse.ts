@@ -732,15 +732,52 @@ const DEFAULT_POOL: ReflectionPool = {
   ],
 };
 
-function pickRandom<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+/** Extract the core phrase from a user message to make reflections feel specific. */
+function extractCorePhrase(message: string): string {
+  const cleaned = message.trim().replace(/\s+/g, ' ');
+  if (cleaned.length <= 120) return cleaned;
+
+  // Try to split on natural sentence boundaries
+  const sentences = cleaned.split(/[.!?]+/).filter((s) => s.trim().length > 10);
+  if (sentences.length > 0) {
+    const first = sentences[0].trim();
+    return first.length <= 120 ? first : first.slice(0, 117) + '...';
+  }
+  return cleaned.slice(0, 117) + '...';
 }
 
-/**
- * Build a fully dynamic response with varied reflection, Quranic verse,
- * steps, and du'a — each independently randomized from the matching
- * emotion pool.
- */
+/** Opening phrases that acknowledge what was shared — varied so it doesn't feel scripted. */
+const ACKNOWLEDGMENTS = [
+  "What you shared about {core} — that takes real courage to put into words.",
+  "I can feel the weight behind what you said about {core}. That is not a small thing.",
+  "Reading your words about {core}, I want you to know — what you are feeling is valid.",
+  "The fact that you reached out about {core} tells me something important: you have not given up.",
+  "When you said {core}, I could hear how much this is affecting you. Let us sit with that for a moment.",
+  "Thank you for trusting me with this. What you described — {core} — is genuinely hard.",
+  "{core} — I hear you. That is a heavy thing to carry, and you do not have to carry it alone right now.",
+];
+
+/** Connecting phrases that bridge the acknowledgment to the emotional context — varied. */
+const CONNECTIONS = [
+  "What you are going through is not a sign of weakness.",
+  "Your feelings are not a flaw in your character — they are a human response to something real.",
+  "This is one of those moments where being honest about the pain is itself an act of strength.",
+  "Sometimes the hardest part is not the struggle itself but feeling like no one understands it.",
+  "You are not the first person to feel this way, and you will not be the last — but your experience is uniquely yours.",
+  "It takes something out of you to keep going through something like this.",
+  "What I want you to hold onto is that this moment does not define your whole story.",
+];
+
+/** Concluding thoughts that offer gentle perspective without being preachy — varied. */
+const CONCLUSIONS = [
+  "Be gentle with yourself right now. You do not have to figure everything out today.",
+  "The steps below are not a to-do list — they are just small ways to lighten the load, one at a time.",
+  "You do not have to have all the answers right now. Sometimes just showing up is enough.",
+  "Take what resonates from the steps below and leave the rest. This is your journey.",
+  "Whatever you decide to do, know that reaching out today was already a meaningful step.",
+  "There is no timeline for this. You move at your own pace, and that pace is exactly right.",
+];
+
 export function buildDynamicResponse(message: string): {
   reflection: string;
   guidance: GuidanceSection;
@@ -751,7 +788,13 @@ export function buildDynamicResponse(message: string): {
   const poolKey = emotions[0] ?? 'general';
   const pool = POOLS[poolKey] ?? DEFAULT_POOL;
 
-  const reflection = pickRandom(pool.reflections);
+  const core = extractCorePhrase(message);
+  const acknowledgment = pickRandom(ACKNOWLEDGMENTS).replace('{core}', core);
+  const connection = pickRandom(CONNECTIONS);
+  const conclusion = pickRandom(CONCLUSIONS);
+
+  const reflection = `${acknowledgment} ${connection} ${conclusion}`;
+
   const verse = pickRandom(pool.verses);
   const stepSet = pickRandom(pool.steps);
   const dua = { ...pickRandom(pool.duas), category: (emotions[0] ?? 'general') as Dua['category'] };
